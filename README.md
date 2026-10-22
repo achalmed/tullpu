@@ -7,6 +7,8 @@ Es un módulo de [Tiqsi](https://github.com/achalmed/tiqsi) sobre [Ruray](https:
 común de los editores: funciona solo, con el anfitrión mínimo de Tiqsi, o dentro de una plataforma que lo monte por su
 manifiesto (como Qillqa).
 
+**Recorrido interactivo:** <https://achalmed.github.io/tullpu/> (el código del sitio está en [`sitio/`](sitio/)).
+
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -e '.[pruebas,sola]'   # requiere tiqsi y ruray
 .venv/bin/python -m pytest -q tests
