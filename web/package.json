@@ -1,0 +1,20 @@
+{
+  "name": "@qillqa/tullpu",
+  "version": "0.1.0",
+  "description": "Tullpu web: el editor de fotos de la plataforma Qillqa, como módulo web de Tiqsi (su manifiesto).",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    "./modulo": "./src/componentes/fotos/modulo.ts"
+  },
+  "peerDependencies": {
+    "@qillqa/tiqsi": "*",
+    "@emotion/react": "^11",
+    "@emotion/styled": "^11",
+    "@mui/icons-material": "^5",
+    "@mui/material": "^5",
+    "react": "^18",
+    "react-dom": "^18",
+    "react-router": "^7"
+  }
+}

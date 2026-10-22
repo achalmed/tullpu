@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Sin red: el motor no puede pedir nada fuera de este servidor (fuentes de Google, búsqueda de imágenes en
+     Pixabay, etc.). Lo que miniPaint intente fuera falla en silencio y el editor sigue funcionando. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' data: blob:; media-src 'self' data: blob:; worker-src 'self' blob:; frame-src 'none'; object-src 'none'">
+<!-- El CSS del motor pide sus íconos con rutas relativas (images/icons/…): la base es la carpeta del paquete. -->
+<base href="vendor/minipaint/">
+<title>Estudio · Fotos · lienzo</title>
+<link rel="stylesheet" href="../../estudio-tema.css">
+<script src="dist/bundle.js"></script>
+<!--
+  foto-lienzo.html — MARCO del motor de capas del editor de fotos (foto.html). Reproduce el esqueleto del
+  index.html de miniPaint v4.14.3 (vendor/minipaint/, MIT, sin modificar) y le pone el tema del estudio con
+  los tokens --est-* de estudio-tema.css. No tiene lógica propia: foto.html lo carga en un <iframe> con
+  ?lang=es y lo maneja por los objetos globales del motor (Layers, AppConfig, State, FileOpen, FileSave).
+-->
+</head>
+<body>
+	<div class="wrapper">
+		<nav aria-label="Menú principal" class="main_menu" id="main_menu"></nav>
+		<div class="submenu">
+			<span class="logo"></span>
+			<div class="block attributes" id="action_attributes"></div>
+			<button class="undo_button" id="undo_button" type="button"><span class="sr_only">Deshacer</span></button>
+		</div>
+		<div class="sidebar_left" id="tools_container"></div>
+		<div class="middle_area" id="middle_area">
+			<canvas class="ruler_left" id="ruler_left"></canvas>
+			<canvas class="ruler_top" id="ruler_top"></canvas>
+			<div class="main_wrapper" id="main_wrapper">
+				<div class="canvas_wrapper" id="canvas_wrapper">
+					<div id="mouse"></div>
+					<div class="transparent-grid" id="canvas_minipaint_background"></div>
+					<canvas id="canvas_minipaint"><div class="trn error">El navegador no admite canvas o JavaScript está desactivado.</div></canvas>
+				</div>
+			</div>
+		</div>
+		<div class="sidebar_right">
+			<div class="preview block">
+				<h2 class="trn toggle" data-target="toggle_preview">Preview</h2>
+				<div id="toggle_preview"></div>
+			</div>
+			<div class="colors block">
+				<h2 class="trn toggle" data-target="toggle_colors">Colors</h2>
+				<div class="content" id="toggle_colors"></div>
+			</div>
+			<div class="block" id="info_base">
+				<h2 class="trn toggle toggle-full" data-target="toggle_info">Information</h2>
+				<div class="content" id="toggle_info"></div>
+			</div>
+			<div class="details block" id="details_base">
+				<h2 class="trn toggle toggle-full" data-target="toggle_details">Layer details</h2>
+				<div class="content details-content" id="toggle_details"></div>
+			</div>
+			<div class="layers block">
+				<h2 class="trn">Layers</h2>
+				<div class="content" id="layers_base"></div>
+			</div>
+		</div>
+	</div>
+	<div class="mobile_menu">
+		<button class="left_mobile_menu" id="left_mobile_menu_button" type="button"><span class="sr_only">Herramientas</span></button>
+		<button class="right_mobile_menu" id="mobile_menu_button" type="button"><span class="sr_only">Paneles</span></button>
+	</div>
+	<div class="hidden" id="tmp"></div>
+	<div id="popups"></div>
+
+<!-- Tema del estudio sobre el motor. Va en el <body> para quedar DESPUÉS de los <style> que el paquete inyecta en
+     el <head>: a igual especificidad, gana. Solo var(--est-*): ningún color escrito aquí. -->
+<style>
+html:root body,html:root body.theme-dark,html:root body.theme-light,html:root body.theme-green{
+  --background:var(--est-sup-1);
+  --text-color:var(--est-texto);
+  --text-color-muted:var(--est-texto-3);
+  --text-color-red:var(--est-peligro);
+  --text-color-green:var(--est-exito);
+  --text-color-blue:var(--est-seleccion);
+  --link-color:var(--est-acento-texto);
+  --section-background-color:var(--est-sup-2);
+  --area-background-color:var(--est-sup-0);
+  --block-background-color:var(--est-sup-2);
+  --header-background-color:var(--est-sup-3);
+  --button-background-color:var(--est-sup-4);
+  --button-background-color-hover:var(--est-sup-hover);
+  --button-background-color-active:var(--est-acento-suave);
+  --button-shadow-color:transparent;
+  --button-text-color-active:var(--est-texto);
+  --button-border-radius:var(--est-radio);
+  --button-toggle-background-color:var(--est-sup-activo);
+  --button-toggle-background-color-hover:var(--est-sup-hover);
+  --input-background-color:var(--est-sup-1);
+  --input-background-color-hover:var(--est-sup-3);
+  --input-text-color:var(--est-texto);
+  --input-border-color:var(--est-borde-control);
+  --input-border-color-active:var(--est-acento-linea);
+  --input-border-radius:var(--est-radio);
+  --input-group-border-color:var(--est-borde);
+  --menu-background-color:var(--est-sup-2);
+  --menu-icons-filter:invert(1) opacity(.82);
+  --menu-icons-filter-active:invert(1);
+  --menu-text-color:var(--est-texto-2);
+  --menu-dropdown-background-color:var(--est-sup-3);
+  --menu-dropdown-border-color:var(--est-borde-control);
+  --menu-dropdown-text-color:var(--est-texto);
+  --menu-dropdown-text-muted-color:var(--est-texto-3);
+  --menu-dropdown-hover-background-color:var(--est-sup-hover);
+  --menu-dropdown-hover-text-color:var(--est-texto);
+  --menu-dropdown-divider-color:var(--est-borde-control);
+  --background-color-active:var(--est-acento);
+  --background-color-hover:var(--est-sup-hover);
+  --text-color-active:var(--est-texto-sobre-acento);
+  --border-color:var(--est-borde-control);
+  --scrollbar-track-color:var(--est-sup-1);
+  --scrollbar-thumb-color:var(--est-borde-fuerte);
+  --mobile-menu-toggle-filter:invert(1);
+}
+html:root body{font-family:var(--est-fuente); background:var(--est-sup-1); color:var(--est-texto);}
+/* sin la marca del paquete en el cromo (la autoría sigue en Ayuda → Acerca de y en vendor/minipaint/) */
+.submenu .logo{display:none;}
+.submenu{background:var(--est-sup-2); border-bottom:1px solid var(--est-borde);}
+.middle_area{background:var(--est-sup-0);}
+.sidebar_left{background:var(--est-sup-2); border-right:1px solid var(--est-borde);}
+.sidebar_left .item{border-radius:var(--est-radio-sm);}
+.sidebar_left .item.active{box-shadow:inset 2px 0 0 var(--est-acento-linea);}
+.sidebar_right{background:var(--est-sup-2); border-left:1px solid var(--est-borde);}
+.sidebar_right .block h2{font:var(--est-peso-fuerte) var(--est-fs-xs)/1.2 var(--est-fuente); letter-spacing:.06em;
+  text-transform:uppercase; color:var(--est-texto-3);}
+.main_menu > ul.menu_bar{border-bottom:1px solid var(--est-borde);}
+#popups .popup{box-shadow:var(--est-sombra-modal); border-radius:var(--est-radio);}
+/* la herramienta «media» busca en Pixabay (fuera de la red permitida): el banco del estudio la reemplaza */
+.sidebar_left .item.media,.sidebar_left #media{display:none;}
+/* avisos del motor (alertify) con el tono del estudio */
+.alertify-notifier .ajs-message{background:var(--est-sup-3); color:var(--est-texto); border:1px solid var(--est-borde-control);
+  border-radius:var(--est-radio); text-shadow:none; font-family:var(--est-fuente);}
+.alertify-notifier .ajs-message.ajs-error{border-color:var(--est-peligro-relleno);}
+.alertify-notifier .ajs-message.ajs-success{border-color:var(--est-exito);}
+</style>
+</body>
+</html>

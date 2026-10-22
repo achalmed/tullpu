@@ -1,0 +1,2492 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estudio · Fotos y videos</title>
+<link rel="stylesheet" href="estudio-tema.css"><!-- tema único del estudio: tokens --est-* y componentes .est-* -->
+<script src="estudio-iconos.js"></script><!-- juego único de íconos de la interfaz: icono("nombre") -->
+<script src="estudio-movil.js" defer></script><!-- teléfono: paneles en cajones, cabecera deslizable -->
+<!--
+  EDITOR DE FOTOS Y VIDEOS del despacho — app hermana de editor.html.
+  Autocontenido (este archivo) + servidor local (servidor/servidor.py), que
+  aporta: banco compartido (recursos), plantillas de marcos
+  (plantillas/marco_foto_video), tokens (tokens),
+  tipografías (tipografia) y exportación de video con ffmpeg.
+
+  Pirámide respetada: tokens → componentes → plantillas → editor → exportación.
+  Este JS NO define colores de marca: todos llegan de /api/design (tokens).
+-->
+<style>
+  :root{
+  /* tokens-color:inicio — GENERADO por adaptadores/generar.py desde tokens/colors.json; no editar: se regenera */
+  /* ---- COLOR · escala Puka (rojo cochinilla) ---- */
+  --puka-50:#FBEDEF; --puka-100:#F6D8DC; --puka-200:#EFB0B9; --puka-300:#E58292;
+  --puka-400:#D9506A; --puka-500:#C42B49; --puka-600:#A6122E; --puka-700:#8A0F27;
+  --puka-800:#6E0F22; --puka-900:#4E0A18;
+
+  /* ---- COLOR · escala Q'illu (amarillo maíz) ---- */
+  --qillu-50:#FDF6E3; --qillu-100:#FAECC4; --qillu-200:#F5DE97; --qillu-300:#F0CB5B;
+  --qillu-400:#EAB61E; --qillu-500:#C99614; --qillu-600:#A67B10; --qillu-700:#83600D;
+  --qillu-800:#5F450B; --qillu-900:#3E2D08;
+
+  /* ---- COLOR · neutros cálidos ---- */
+  --neutral-100:#F5F1EC; --neutral-200:#E9E2D9; --neutral-300:#DCD2C6; --neutral-400:#C9BFB4;
+  --neutral-500:#A99E92; --neutral-600:#8A8079; --neutral-700:#6E655D; --neutral-800:#524B45;
+  --neutral-900:#241F1C;
+
+  /* ---- COLOR · fondos ---- */
+  --fondo-papel:#F5F1EC; --fondo-blanco:#FFFFFF; --fondo-vino:#6E0F22; --fondo-tinta:#241F1C;
+
+  /* ---- COLOR · funcionales (NO marca; siempre con ícono y texto) ---- */
+  --func-exito:#2E7D32; --func-aviso:#EAB61E; --func-error:#A6122E; --func-info-data-only:#4A5A66;
+
+  /* ---- COLOR · datos: serie categórica, en orden (gráficos; etiqueta directa) ---- */
+  --datos-1:#A6122E; --datos-2:#A67B10; --datos-3:#002E6C; --datos-4:#22949F;
+  --datos-5:#8176F1; --datos-6:#636363;
+
+  /* ---- COLOR · datos: divergente ---- */
+  --datos-div-1:#A6122E; --datos-div-2:#F5F1EC; --datos-div-3:#241F1C;
+
+  /* ---- COLOR · excepcionales (NO marca: alertas, campañas; ver colors.json) ---- */
+  --exc-rojo-vivo:#E30613; --exc-rojo-vivo-profundo:#8E0510; --exc-rojo-vivo-suave:#C10510; --exc-rosa-vivo:#FFCED2;
+  --exc-rojo-puro:#FF0000; --exc-rojo-puro-suave:#D60000; --exc-rosa-puro:#FFD6D6; --exc-rosa-claro:#FFE8EA;
+  --exc-crema:#FFF6D6; --exc-oro-vivo:#FFC400; --exc-negro:#000000; --exc-tinta-luto:#3A322D;
+  --exc-tinta-profunda:#1A1614;
+
+  /* ---- COLOR · interfaz del estudio: grafito (cromo de las herramientas, NO de las piezas) ---- */
+  --grafito-950:#111214; --grafito-900:#16171A; --grafito-850:#1B1C1F; --grafito-800:#212226;
+  --grafito-750:#27292D; --grafito-700:#2E3035; --grafito-650:#373A40; --grafito-600:#44474E;
+  --grafito-500:#5C6069; --grafito-400:#8E939B; --grafito-300:#A9ADB5; --grafito-200:#CBCED4;
+  --grafito-100:#E6E8EB;
+
+  /* ---- COLOR · interfaz del estudio: estados sobre grafito ---- */
+  --interfaz-seleccion:#4A90E2; --interfaz-exito:#5DB37E;
+  /* tokens-color:fin */
+  }
+  /* Cromo: estudio-tema.css (tokens --est-* y componentes .est-*); aquí solo la DISTRIBUCIÓN de este editor y sus
+     piezas propias, sin colores escritos a mano (docs/decisiones.md §2.6). Los colores de MARCA del perfil llegan
+     de /api/design como --puka, --qillu, --tinta, --papel… y solo se usan en el lienzo. */
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0; overflow:hidden}
+  button,input,select,textarea{font:inherit; color:inherit}
+
+  /* ---------- barra superior ---------- */
+  #marca small{font-weight:400; font-size:var(--est-fs-sm); color:var(--est-texto-3); margin-left:2px}
+  .tb-btn.on{background:var(--est-acento-suave); color:var(--est-texto)}
+  .tb-btn.on .ico{color:var(--est-acento-linea)}
+  .empuje{flex:1}
+
+  /* ---------- distribución: cabecera · (riel | panel izq. | centro | panel der.) ---------- */
+  #main{display:grid; grid-template-columns:var(--est-ancho-riel) var(--est-ancho-panel-izq) 1fr var(--est-ancho-panel-der);
+        height:calc(100% - var(--est-alto-cabecera))}
+  #izq,#der{background:var(--est-sup-2); overflow-y:auto; padding:0 var(--est-esp-3)}
+  #izq{border-right:1px solid var(--est-borde)} #der{border-left:1px solid var(--est-borde)}
+  @media (max-width:760px){ #main{grid-template-columns:var(--est-ancho-riel) 1fr} }
+  .sec{padding:var(--est-esp-3) 0; border-bottom:1px solid var(--est-borde)}
+  .sec:last-child{border-bottom:none}
+  .sec h3{font:var(--est-peso-fuerte) var(--est-fs-xs)/1.2 var(--est-fuente); letter-spacing:.06em; text-transform:uppercase;
+          color:var(--est-texto-3); margin:0 0 var(--est-esp-2); display:flex; align-items:center; gap:6px}
+  .sec h3 .ico{color:var(--est-texto-3)}
+  .p-btn{display:flex; align-items:center; gap:6px; width:100%; text-align:left; background:var(--est-sup-4);
+         border:1px solid var(--est-borde-control); border-radius:var(--est-radio); padding:6px 10px; color:var(--est-texto);
+         margin-bottom:6px; cursor:pointer; font-size:var(--est-fs-base)}
+  .p-btn:hover{background:var(--est-sup-hover); border-color:var(--est-borde-fuerte)}
+  .fila{display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap}
+  .fila label{color:var(--est-texto-3); font-size:var(--est-fs-sm); min-width:62px}
+  .fila input[type=text],.fila input[type=number],.fila select,.fila textarea{flex:1; min-width:0}
+  .fila input[type=range]{flex:1}
+  textarea{resize:vertical}
+
+  /* formato */
+  #formatos{display:grid; grid-template-columns:1fr 1fr; gap:6px}
+  .fmt{background:var(--est-sup-4); border:1px solid var(--est-borde-control); border-radius:var(--est-radio);
+       padding:6px 8px; cursor:pointer; text-align:left}
+  .fmt:hover{border-color:var(--est-borde-fuerte)}
+  .fmt.on{background:var(--est-acento-suave); border-color:var(--est-acento-linea)}
+  .fmt b{display:block; font-size:var(--est-fs-sm); font-weight:var(--est-peso-fuerte)} .fmt span{color:var(--est-texto-3); font-size:var(--est-fs-xs)}
+  .fmt[disabled]{opacity:.35; pointer-events:none}
+
+  /* plantillas (presets) */
+  .preset{display:flex; gap:9px; align-items:center}
+  .preset .ic{font-size:17px; width:24px; text-align:center; flex:none}
+  .preset .txt{flex:1; min-width:0}
+  .preset b{display:block; font-size:var(--est-fs-base); font-weight:var(--est-peso-fuerte)} .preset span{color:var(--est-texto-3); font-size:var(--est-fs-xs)}
+  .sub-tit{font:var(--est-peso-fuerte) var(--est-fs-xs)/1.2 var(--est-fuente); letter-spacing:.06em; text-transform:uppercase;
+           color:var(--est-texto-3); margin:12px 0 6px}
+  .tpl-acc{display:flex; gap:2px; flex:none; color:var(--est-texto-3)}
+  .tpl-acc span{cursor:pointer; padding:2px 4px; border-radius:var(--est-radio-sm); font-size:var(--est-fs-base); line-height:1}
+  .tpl-acc span:hover{color:var(--est-texto); background:var(--est-sup-hover)}
+  .tpl-acc .es-def{color:var(--est-aviso)}
+
+  /* banco */
+  #banco-tabs{display:flex; gap:2px; margin-bottom:6px; padding:2px; background:var(--est-sup-1);
+        border:1px solid var(--est-borde-control); border-radius:var(--est-radio)}
+  #banco-tabs button{flex:1; display:inline-flex; align-items:center; justify-content:center; gap:4px; height:24px;
+        background:transparent; border:none; border-radius:var(--est-radio-sm); cursor:pointer; color:var(--est-texto-3);
+        font-size:var(--est-fs-sm); font-weight:var(--est-peso-medio)}
+  #banco-tabs button:hover{color:var(--est-texto)}
+  #banco-tabs button.on{background:var(--est-sup-activo); color:var(--est-texto)}
+  #banco-tabs #tab-refrescar{flex:none; width:28px}
+  #banco-etiquetas{display:flex; flex-wrap:wrap; gap:4px; margin-bottom:6px}
+  .tagchip{background:var(--est-sup-4); border:1px solid var(--est-borde-control); color:var(--est-texto-2);
+        border-radius:var(--est-radio-redondo); padding:2px 9px; cursor:pointer; font-weight:var(--est-peso-medio);
+        font-size:var(--est-fs-xs); white-space:nowrap}
+  .tagchip:hover{color:var(--est-texto); border-color:var(--est-borde-fuerte)}
+  .tagchip.on{background:var(--est-acento); border-color:transparent; color:var(--est-texto-sobre-acento)}
+  .banco-sep{grid-column:1/-1; display:flex; align-items:center; gap:7px; margin:9px 0 1px}
+  .banco-sep .sep-linea{flex:1; height:1px; background:var(--est-borde-control)}
+  .banco-sep .sep-nom{font-weight:var(--est-peso-fuerte); font-size:var(--est-fs-xs); color:var(--est-texto-2); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:58%}
+  .banco-sep .sep-cnt{font-weight:var(--est-peso-fuerte); font-size:10px; color:var(--est-texto-3); background:var(--est-sup-4);
+    border-radius:var(--est-radio-redondo); padding:1px 6px; flex:none}
+  #banco{display:grid; grid-template-columns:repeat(3,1fr); gap:4px; max-height:228px; overflow-y:auto}
+  #banco .mini{position:relative; aspect-ratio:1; border-radius:var(--est-radio-sm); overflow:hidden;
+        border:1px solid var(--est-borde); cursor:pointer; background:var(--est-sup-0)}
+  #banco .mini img,#banco .mini video{width:100%; height:100%; object-fit:cover; display:block}
+  #banco .mini:hover{outline:2px solid var(--est-acento-linea); outline-offset:-1px}
+  #banco .mini .vid{position:absolute; right:3px; bottom:3px; font-size:var(--est-fs-xs)}
+
+  /* componentes (interruptores) */
+  .comp{background:var(--est-sup-3); border:1px solid var(--est-borde); border-radius:var(--est-radio);
+        padding:7px 10px; margin-bottom:6px}
+  .comp .cab{display:flex; align-items:center; gap:8px; cursor:pointer}
+  .comp .cab b{flex:1; font-size:var(--est-fs-base); font-weight:var(--est-peso-fuerte)}
+  .comp .cuerpo{margin-top:7px; display:none}
+  .comp.on{border-color:var(--est-borde-fuerte)}
+  .comp.on .cuerpo{display:block}
+
+  /* ---------- centro ---------- */
+  /* min-height:0 es OBLIGATORIO: #centro es celda de grid y a la vez columna
+     flex. Sin él, min-height:auto impide que encoja y el lienzo alto empuja el
+     footer/timeline fuera de la vista (body overflow:hidden los recorta) y falsea
+     la altura que lee ajustarVista → zoom excesivo y "solo se ve una parte". */
+  #centro{display:flex; flex-direction:column; min-width:0; min-height:0; background:var(--est-sup-0)}
+  #lienzo-wrap{flex:1; min-height:0; overflow:auto; display:grid; place-items:center; padding:22px}
+  #lienzo{box-shadow:var(--est-sombra-lienzo); background:var(--est-sup-1)}
+
+  /* línea de tiempo (video): transporte + barra de recorte, sobre la base .est-linea-tiempo */
+  #timeline{display:none; gap:var(--est-esp-2); align-items:center; padding:6px var(--est-esp-3);
+      background:var(--est-sup-2); border-top:1px solid var(--est-borde)}
+  #timeline.activo{display:flex}
+  #tl-play{width:32px; height:32px; border-radius:50%; background:var(--est-acento); color:var(--est-texto-sobre-acento);
+      border:none; cursor:pointer; display:grid; place-items:center; flex:none}
+  #tl-play:hover{background:var(--est-acento-hover)}
+  #tl-play .ico{width:14px; height:14px; fill:currentColor}
+  #tl-barra{flex:1; position:relative; height:30px; display:flex; align-items:center; padding:0 2px;
+      background:var(--est-sup-1); border:1px solid var(--est-borde-control); border-radius:var(--est-radio)}
+  #tl-scrub{width:100%; position:relative; z-index:1}
+  #tl-rangos{position:absolute; left:2px; right:2px; top:7px; height:14px; pointer-events:none}
+  #tl-rangos i{position:absolute; top:0; height:14px; background:var(--est-aviso-suave);
+      border:1px solid var(--est-aviso); border-radius:var(--est-radio-sm)}
+  #timeline .t{font-size:var(--est-fs-sm); font-variant-numeric:tabular-nums; color:var(--est-texto-2); min-width:86px; text-align:center}
+  .tl-btn{display:inline-flex; align-items:center; gap:4px; height:var(--est-alto-control); background:var(--est-sup-4);
+      border:1px solid var(--est-borde-control); border-radius:var(--est-radio); padding:0 8px; cursor:pointer;
+      font-size:var(--est-fs-sm); color:var(--est-texto-2)}
+  .tl-btn:hover{background:var(--est-sup-hover); color:var(--est-texto)}
+
+  /* ---------- panel derecho ---------- */
+  #props .vacio{color:var(--est-texto-3); font-size:var(--est-fs-sm); padding:6px 2px}
+  .muestras-color{display:flex; gap:6px; flex-wrap:wrap}
+  .sw{width:24px; height:24px; border-radius:var(--est-radio-sm); border:2px solid var(--est-borde-fuerte); cursor:pointer}
+  .sw:hover{border-color:var(--est-texto-2)}
+  .sw.on{border-color:var(--est-texto); box-shadow:0 0 0 2px var(--est-acento-linea)}
+  #capas .capa{display:flex; align-items:center; gap:6px; background:var(--est-sup-3);
+      border:1px solid var(--est-borde); border-radius:var(--est-radio-sm); padding:5px 8px; margin-bottom:4px;
+      cursor:pointer; font-size:var(--est-fs-sm)}
+  #capas .capa:hover{background:var(--est-sup-4)}
+  #capas .capa.on{background:var(--est-acento-suave); border-color:var(--est-acento-linea)}
+  #capas .capa .nom{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  #capas .capa button{background:none; border:none; cursor:pointer; color:var(--est-texto-3); padding:1px 3px}
+  #capas .capa button:hover{color:var(--est-texto)}
+
+  /* ---------- modal y avisos ---------- */
+  #modal-fondo{position:fixed; inset:0; background:color-mix(in srgb,var(--grafito-950) 72%,transparent); display:none;
+      place-items:center; z-index:40}
+  #modal-fondo.on{display:grid}
+  #modal{background:var(--est-sup-2); border:1px solid var(--est-borde-control); border-radius:var(--est-radio);
+      box-shadow:var(--est-sombra-modal); padding:20px; width:min(520px,92vw); max-height:88vh; overflow:auto}
+  #modal h3{margin:0 0 12px; font:var(--est-peso-fuerte) var(--est-fs-lg)/1.3 var(--est-fuente)}
+  #modal img{max-width:100%; border-radius:var(--est-radio)}
+  #toast{position:fixed; left:50%; bottom:calc(var(--est-alto-estado) + 20px); transform:translateX(-50%);
+      background:var(--est-sup-3); color:var(--est-texto); border:1px solid var(--est-borde-control); box-shadow:var(--est-sombra-menu);
+      padding:8px 14px; border-radius:var(--est-radio); z-index:50; opacity:0; transition:opacity .2s; pointer-events:none; max-width:80vw}
+  #toast.on{opacity:1}
+  #sin-servidor{position:fixed; inset:0; z-index:60; background:var(--est-sup-1); display:none;
+      place-items:center; text-align:center; padding:30px; color:var(--est-texto-2)}
+  #sin-servidor.on{display:grid}
+  #sin-servidor h2{font:var(--est-peso-fuerte) 20px/1.3 var(--est-fuente); color:var(--est-texto)}
+  #sin-servidor code{background:var(--est-sup-4); padding:2px 8px; border-radius:var(--est-radio-sm); color:var(--est-texto);
+      font-family:var(--est-fuente-mono)}
+  .enlace{color:var(--est-texto); text-decoration:underline; text-decoration-color:var(--est-acento-linea)}
+  .cargando{opacity:.5; pointer-events:none}
+</style>
+</head>
+<body data-movil-izq="#izq" data-movil-der="#der">
+
+<div id="topbar" class="est-cabecera">
+  <span id="marca" class="est-cabecera__titulo">Fotos y videos<small>v2.9</small></span>
+  <span class="est-sep"></span>
+  <div class="est-grupo">
+    <button class="tb-btn est-boton est-boton--icono" id="btn-undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><i class="ico" data-ico="deshacer"></i></button>
+    <button class="tb-btn est-boton est-boton--icono" id="btn-redo" title="Rehacer (Ctrl+Shift+Z)" aria-label="Rehacer"><i class="ico" data-ico="rehacer"></i></button>
+  </div>
+  <span class="est-sep"></span>
+  <div class="est-grupo">
+    <button class="tb-btn est-boton est-boton--icono" id="btn-zoom-out" title="Alejar" aria-label="Alejar"><i class="ico" data-ico="alejar"></i></button>
+    <span id="zoom-pct" class="est-cifra" title="Zoom">100%</span>
+    <button class="tb-btn est-boton est-boton--icono" id="btn-zoom-in" title="Acercar" aria-label="Acercar"><i class="ico" data-ico="acercar"></i></button>
+    <button class="tb-btn est-boton est-boton--icono" id="btn-zoom-fit" title="Ajustar a la ventana" aria-label="Ajustar a la ventana"><i class="ico" data-ico="ajustar"></i></button>
+  </div>
+  <span class="est-sep"></span>
+  <button class="tb-btn est-boton" id="btn-zonas" title="Mostrar zonas seguras (TikTok/Stories) y márgenes"><i class="ico" data-ico="zonas"></i>Zonas seguras</button>
+  <span class="empuje est-empuje"></span>
+  <a class="tb-btn est-boton" href="editor.html" title="Editor de publicaciones (plantillas de diseño)"><i class="ico" data-ico="plantillas"></i>Publicaciones</a>
+  <a class="tb-btn est-boton" href="video.html" id="btn-video" title="Editor de video: varios clips en pistas, títulos, transiciones, música y subtítulos automáticos"><i class="ico" data-ico="pelicula"></i>Editor de video</a>
+  <span class="est-sep"></span>
+  <button class="tb-btn est-boton" id="btn-preview" title="Vista previa"><i class="ico" data-ico="vista-previa"></i>Vista previa</button>
+  <button class="tb-btn est-boton est-boton--borde" id="btn-proyecto" title="Guardar / abrir proyecto (con la foto/video)"><i class="ico" data-ico="guardar"></i>Proyecto</button>
+  <button class="tb-btn primario est-boton est-boton--primario" id="btn-export"><i class="ico" data-ico="descargar"></i>Exportar</button>
+</div>
+
+<div id="main">
+  <!-- ============ RIEL: salta a cada sección del panel izquierdo ============ -->
+  <nav id="riel" class="est-riel" aria-label="Secciones">
+    <button class="est-riel__boton on" data-sec="sec-archivo" title="Archivo y banco" aria-label="Archivo y banco"><i class="ico" data-ico="imagen"></i></button>
+    <button class="est-riel__boton" data-sec="sec-mejora" title="Mejora de calidad" aria-label="Mejora de calidad"><i class="ico" data-ico="mejora"></i></button>
+    <button class="est-riel__boton" data-sec="sec-revelado" title="Revelado" aria-label="Revelado"><i class="ico" data-ico="ajustes"></i></button>
+    <button class="est-riel__boton" data-sec="sec-formato" title="Formato" aria-label="Formato"><i class="ico" data-ico="recorte"></i></button>
+    <button class="est-riel__boton" data-sec="sec-componentes" title="Componentes" aria-label="Componentes"><i class="ico" data-ico="capas"></i></button>
+  </nav>
+  <!-- ============ PANEL IZQUIERDO ============ -->
+  <div id="izq">
+    <div class="sec" id="sec-archivo">
+      <h3><i class="ico ico--sm" data-ico="imagen"></i>Archivo</h3>
+      <button class="p-btn" id="btn-subir"><i class="ico" data-ico="subir"></i>Subir foto o video…</button>
+      <input type="file" id="inp-archivo" accept="image/*,video/mp4,video/webm,video/quicktime" hidden>
+      <div id="banco-tabs">
+        <button id="tab-fotos" class="on">Fotos</button>
+        <button id="tab-videos">Videos</button>
+        <button id="tab-refrescar" title="Refrescar banco" aria-label="Refrescar banco"><i class="ico ico--sm" data-ico="refrescar"></i></button>
+      </div>
+      <div id="banco-etiquetas"></div>
+      <div id="banco"></div>
+    </div>
+
+    <div class="sec" id="sec-mejora">
+      <h3><i class="ico ico--sm" data-ico="mejora"></i>Mejora de calidad</h3>
+      <div id="mejora"></div>
+    </div>
+
+    <div class="sec" id="sec-revelado">
+      <h3><i class="ico ico--sm" data-ico="ajustes"></i>Revelado</h3>
+      <div id="revelado"></div>
+    </div>
+
+    <div class="sec" id="sec-formato">
+      <h3><i class="ico ico--sm" data-ico="recorte"></i>Formato</h3>
+      <div id="formatos"></div>
+    </div>
+
+    <div class="sec" id="sec-componentes">
+      <h3><i class="ico ico--sm" data-ico="capas"></i>Componentes</h3>
+      <div id="componentes"></div>
+    </div>
+
+  </div>
+
+  <!-- ============ CENTRO ============ -->
+  <div id="centro">
+    <div id="lienzo-wrap" class="est-lienzo"><canvas id="lienzo" width="1080" height="1350"></canvas></div>
+    <div id="timeline">
+      <button id="tl-play" title="Reproducir o pausar" aria-label="Reproducir o pausar"><i class="ico" data-ico="reproducir"></i></button>
+      <span class="t" id="tl-tiempo">0:00.0 / 0:00.0</span>
+      <div id="tl-barra">
+        <div id="tl-rangos"></div>
+        <input type="range" id="tl-scrub" min="0" max="100" step="0.05" value="0">
+      </div>
+      <button class="tl-btn" id="tl-set-ini" title="El recorte empieza aquí"><i class="ico ico--sm" data-ico="marca-inicio"></i>Inicio</button>
+      <span class="t" id="tl-io">0:00 – fin</span>
+      <button class="tl-btn" id="tl-set-fin" title="El recorte termina aquí">Fin<i class="ico ico--sm" data-ico="marca-fin"></i></button>
+      <span class="est-sep"></span>
+      <button class="tl-btn" id="tl-cortar" title="Dividir el tramo en el punto actual (multicorte)" aria-label="Dividir el tramo"><i class="ico ico--sm" data-ico="cortar"></i></button>
+      <button class="tl-btn" id="tl-quitar" title="Quitar el tramo donde está el punto" aria-label="Quitar el tramo"><i class="ico ico--sm" data-ico="papelera"></i></button>
+    </div>
+    <div id="barra-estado" class="est-estado">
+      <span id="est-formato"></span><span id="est-medio"></span><span id="est-pieza"></span>
+    </div>
+  </div>
+
+  <!-- ============ PANEL DERECHO ============ -->
+  <div id="der">
+    <div class="sec"><h3><i class="ico ico--sm" data-ico="propiedades"></i>Propiedades</h3><div id="props"><div class="vacio">
+      Selecciona la foto/video (clic en el lienzo) o una capa.</div></div></div>
+    <div class="sec"><h3><i class="ico ico--sm" data-ico="capas"></i>Capas</h3><div id="capas"></div></div>
+  </div>
+</div>
+
+<div id="modal-fondo"><div id="modal"></div></div>
+<div id="toast"></div>
+<div id="sin-servidor"><div>
+  <h2>El editor necesita el servidor local</h2>
+  <p>Abre una terminal en <code>editor/</code> y ejecuta:</p>
+  <p style="font-size:18px"><code>./abrir-editor.sh</code></p>
+  <p>Luego entra a <span class="enlace">http://127.0.0.1:8099/media.html</span><br>
+  (el servidor conecta el banco de fotos, las plantillas y la exportación de video).</p>
+</div></div>
+
+<script>
+"use strict";
+/* ==================================================================== *
+ *  Editor de piezas · Fotos y Videos                                       *
+ *  Secciones: Util · Cfg · Estado · Historial · Medios · Render ·      *
+ *  Interacción · Paneles · Timeline · Presets · Exportar · Proyectos   *
+ * ==================================================================== */
+
+/* ---------------- Util ---------------- */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+/* Rutas del servidor RELATIVAS a esta página: funciona servido en la raíz
+   (http://127.0.0.1:8099/media.html) o bajo una carpeta detrás de un proxy
+   (/estudio/media.html). api("/api/x") → "<carpeta de la página>/api/x". */
+const BASE = location.pathname.replace(/[^/]*$/, "");
+const api = p => BASE + String(p).replace(/^\//, "");
+/* La base del VIDEO (recortar un video suelto): la de esta página o, si el editor de fotos corre aparte del de videos
+   (Tullpu en /api/fotos/, fase 10.2b E2c), la carpeta que llega en ?video= («/estudio/»), del mismo sitio. Un medio
+   del banco se le pasa con su prefijo: es el mismo banco. */
+const VIDEO_BASE = (v => /^\/(?!\/)[A-Za-z0-9._~\/-]*\/$/.test(v) && !v.includes("..") ? v : BASE)(
+  new URLSearchParams(location.search).get("video") || "");
+const apiVideo = p => VIDEO_BASE + String(p).replace(/^\//, "");
+const aVideo = url => VIDEO_BASE !== BASE && String(url).startsWith(BASE) ? VIDEO_BASE + String(url).slice(BASE.length) : url;
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const esc = t => String(t).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function toast(msg, ms=2600){ const t=$("#toast"); t.textContent=msg; t.classList.add("on");
+  clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("on"), ms); }
+function slug(t){ return t.normalize("NFKD").replace(/[̀-ͯ]/g,"")
+  .toLowerCase().replace(/ /g,"_").replace(/\//g,"-"); }
+function fmtT(s){ if(!isFinite(s)) s=0; const m=Math.floor(s/60), r=s-m*60;
+  return m+":"+String(Math.floor(r)).padStart(2,"0")+"."+Math.floor((r%1)*10); }
+const imgCache = {};
+function cargarImg(url){ if(!url) return Promise.resolve(null);
+  if(imgCache[url]) return imgCache[url];
+  imgCache[url] = new Promise(res=>{ const im=new Image();
+    im.onload=()=>res(im); im.onerror=()=>res(null); im.src=url; });
+  return imgCache[url]; }
+
+/* ---------------- Configuración (tokens + plantillas del servidor) ------ */
+let CFG = null;          // /api/design — fuente única de colores/formatos
+let BANCO = {imagenes:[], videos:[]};
+
+/* Formatos de reserva: sin perfil (o con un config.json de marcos sin «formatos_foto») /api/design no trae
+   ninguno y el editor no debe romperse; son los del perfil de ejemplo (perfil.ejemplo/marcos/config.json). */
+const FORMATOS_FOTO_DEFECTO = {
+  cuadrada_1080x1080:{px:[1080,1080], banda_px:180}, vertical_1080x1350:{px:[1080,1350], banda_px:190},
+  horizontal_1440x1080:{px:[1440,1080], banda_px:180}, horizontal_1920x1080:{px:[1920,1080], banda_px:180},
+  facebook_1200x630:{px:[1200,630], banda_px:132}, estado_1080x1920:{px:[1080,1920], banda_px:240},
+};
+async function cargarCfg(){
+  try{ const r = await fetch(api("/api/design")); CFG = await r.json(); }catch(_){ CFG = {}; }
+  CFG = CFG && typeof CFG === "object" ? CFG : {};
+  const validos = Object.entries(CFG.formatos_foto || {}).filter(([, f]) => f && Array.isArray(f.px) && f.px.length === 2);
+  CFG.formatos_foto = validos.length ? Object.fromEntries(validos) : {...FORMATOS_FOTO_DEFECTO};
+  CFG.formatos_video = CFG.formatos_video || {};
+  CFG.colores = CFG.colores || {}; CFG.fuentes = CFG.fuentes || {}; CFG.textos = CFG.textos || {};
+  CFG.insumos = CFG.insumos || {}; CFG.zonas = CFG.zonas || {};
+  CFG.plantillas = Object.assign({marcos:{}, bandas:{}, rotulos_16x9:{}, rotulos_tiktok:{}, mosca:"", monograma:""}, CFG.plantillas || {});
+  const c = CFG.colores, raiz = document.documentElement.style;
+  for(const k in c) raiz.setProperty("--"+k, c[k]);
+  // Tipografías del despacho (canvas y UI) — desde tipografia vía servidor
+  const mapa = {
+    "Archivo-Black":["Archivo",900], "Archivo-ExtraBold":["Archivo",800],
+    "Archivo-Bold":["Archivo",700],  "Archivo-SemiBold":["Archivo",600],
+    "SourceSans3-Regular":["Source Sans 3",400], "SourceSans3-SemiBold":["Source Sans 3",600],
+  };
+  const cargas = [];
+  for(const [archivo,[fam,peso]] of Object.entries(mapa)){
+    const url = CFG.fuentes[archivo]; if(!url) continue;
+    const f = new FontFace(fam, `url("${url}")`, {weight:String(peso)});
+    cargas.push(f.load().then(ff=>document.fonts.add(ff)).catch(()=>{}));
+  }
+  await Promise.all(cargas);
+}
+async function cargarBanco(){
+  try{ BANCO = await (await fetch(api("/api/media"))).json(); }catch(_){ }
+  pintarBanco();
+}
+
+/* ---------------- Estado ---------------- */
+/* Parámetros editables del marco (todo estilo los hereda; cada uno usa los
+   suyos). nombre/rol en null = usar los oficiales de los tokens. */
+const MARCO_DEFAULTS = {
+  nombre: null, rol: null,
+  colores: {},                  // overrides por rol de color del estilo
+  escala: 1, opacidad: 1, intensidad: 1,
+  logo: true, monograma: true, filete: true,
+  recorte: false, faja: true, obelisco: true, pastilla: true,
+  textoDX: 0, textoDY: 0,       // desplazamiento del bloque de firma (arrastrable)
+};
+const S = {
+  formato: "vertical_1080x1350",
+  W: 1080, H: 1350,
+  medio: null,        // {tipo:"foto"|"video", url, nombre, nat:{w,h}}
+  rec: null,          // recuadre: rect del ORIGEN que se muestra {x,y,w,h}
+  video: {ini:0, fin:0, dur:0},
+  // componentes institucionales (el marco se dibuja nativo y es 100 % editable)
+  marco:  {activo:false, modo:"tinta", ...MARCO_DEFAULTS, colores:{}},
+  rotulo: {activo:false, kicker:"EN VIVO"},
+  mosca:  {activo:false, esquina:"sd", escala:0.62, opacidad:1},
+  cintillo: null,     // {texto,x,y}
+  textos: [],         // capas libres [{id,texto,familia,peso,px,color,tracking,sombra,opacidad,x,y}]
+  sel: null,          // "medio" | "cintillo" | "mosca" | "marco" | "rotulo" | id de texto
+  zonas: false,
+  // Revelado (como Photoshop/Kdenlive): 100 = neutro; hue en grados
+  ajustes: {br:100, ct:100, sat:100, hue:0, blur:0},
+};
+let vista = {zoom: 1};          // zoom visual del lienzo (no afecta la pieza)
+let elMedio = null;             // Image o <video> real
+let idSec = 1;
+
+function esVideo(){ return S.medio && S.medio.tipo === "video"; }
+
+/* ---------------- Revelado (luz y color, foto y video) ---------------- */
+function filtroCSS(){
+  const a = S.ajustes || {}; const f = [];
+  if(a.br  !== 100) f.push(`brightness(${a.br}%)`);
+  if(a.ct  !== 100) f.push(`contrast(${a.ct}%)`);
+  if(a.sat !== 100) f.push(`saturate(${a.sat}%)`);
+  if(a.hue)         f.push(`hue-rotate(${a.hue}deg)`);
+  if(a.blur)        f.push(`blur(${a.blur}px)`);
+  return f.length ? f.join(" ") : "none";
+}
+function pintarRevelado(){
+  const c = $("#revelado"); if(!c) return;
+  const a = S.ajustes;
+  const fila = (id,lab,min,max,step,val,neutro)=>`<div class="fila"><label>${lab}</label>
+    <input type="range" id="${id}" min="${min}" max="${max}" step="${step}" value="${val}"
+      title="doble clic = ${neutro}"></div>`;
+  c.innerHTML = fila("rv-br","Brillo",40,180,1,a.br,100)
+    + fila("rv-ct","Contraste",40,180,1,a.ct,100)
+    + fila("rv-sat","Saturación",0,200,1,a.sat,100)
+    + fila("rv-hue","Tono",-180,180,1,a.hue,0)
+    + fila("rv-blur","Desenfoque",0,12,0.5,a.blur,0)
+    + `<div class="fila"><button class="p-btn" id="rv-byn" style="flex:1">◐ B/N</button>
+       <button class="p-btn" id="rv-reset" style="flex:1">↺ Original</button></div>
+       <div style="font-size:11px;color:var(--ui-texto2)">Se aplica igual al exportar
+       (foto y video). El diseño (marcos, textos) vive en el editor 🎨.</div>`;
+  const liga = (id,clave)=>{ const el=$(id);
+    el.oninput = e=>{ S.ajustes[clave] = +e.target.value; dibujar(); };
+    el.onchange = ()=>Hist.marcar();
+    el.ondblclick = ()=>{ S.ajustes[clave] = (clave==="hue"||clave==="blur")?0:100;
+      pintarRevelado(); dibujar(); Hist.marcar(); }; };
+  liga("#rv-br","br"); liga("#rv-ct","ct"); liga("#rv-sat","sat");
+  liga("#rv-hue","hue"); liga("#rv-blur","blur");
+  $("#rv-byn").onclick = ()=>{ S.ajustes.sat = S.ajustes.sat===0?100:0;
+    pintarRevelado(); dibujar(); Hist.marcar(); };
+  $("#rv-reset").onclick = ()=>{ S.ajustes = {br:100,ct:100,sat:100,hue:0,blur:0};
+    pintarRevelado(); dibujar(); Hist.marcar(); };
+}
+
+/* ========= MEJORA AUTOMÁTICA DE CALIDAD (subproceso del servidor) =========
+   Realce NO destructivo de fotos de baja calidad / comprimidas (típico WhatsApp):
+   el servidor (mejorar_foto.py) hace upscale + limpieza de compresión + nitidez,
+   para que la pieza no se vea pixelada en Facebook/Instagram/TikTok/X. La foto
+   ORIGINAL nunca se pierde (S.medio.original) y siempre se puede restaurar. */
+const Mejora = (()=>{
+  const CAMPOS = ["nitidez", "ruido", "claridad", "resolucion"];
+  async function _post(ruta, cuerpo){
+    const r = await fetch(api(ruta), {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(cuerpo)});
+    return await r.json();
+  }
+  function _st(){ if(!S.medio) return null;
+    return S.medio.mejora || (S.medio.mejora = {nivel:"auto", params:{}, activa:false, info:null, cargando:false}); }
+  async function analizar(origen){ try{ return await _post("/api/analizar-foto", {origen}); }catch(_){ return {ok:false}; } }
+  /* Pide la mejora al servidor y sustituye la imagen de trabajo (progresivo). */
+  async function aplicar(nivel, params, avisar){
+    if(!S.medio || esVideo() || !S.medio.original) return;
+    const m = _st(); m.cargando = true;
+    if(nivel) m.nivel = nivel;
+    if(params) m.params = {...m.params, ...params};
+    pintarMejora();
+    let res;
+    try{ res = await _post("/api/mejorar-foto", {origen:S.medio.original, nivel:m.nivel, ...m.params}); }
+    catch(_){ res = {ok:false, error:"sin conexión con el servidor"}; }
+    m.cargando = false;
+    if(!res.ok){ toast("No se pudo mejorar: " + (res.error||"")); pintarMejora(); return; }
+    const im = await cargarImg(res.url);
+    if(!im){ pintarMejora(); return; }
+    elMedio = im; S.medio.url = res.url; S.medio.nat = {w:im.naturalWidth, h:im.naturalHeight};
+    m.activa = true; m.urlMejorada = res.url;
+    if(res.analisis && res.analisis.ok) m.info = res.analisis;
+    S.rec = recCubrir(); pintarTodo(); Hist.marcar();
+    if(avisar) toast("Mejora aplicada ✓");
+  }
+  /* Llamado al cargar una foto: analiza y, si conviene, mejora en 'auto'. */
+  async function auto(origenUrl){
+    if(!S.medio) return;
+    S.medio.original = origenUrl;
+    const info = await analizar(origenUrl);
+    const m = _st(); m.info = info; m.nivel = "auto"; m.params = {}; m.activa = false;
+    pintarMejora();
+    if(info && info.ok && info.necesita) await aplicar("auto", {}, false);
+  }
+  function restaurar(){
+    if(!S.medio || !S.medio.original) return;
+    cargarImg(S.medio.original).then(im=>{ if(!im) return;
+      elMedio = im; S.medio.url = S.medio.original; S.medio.nat = {w:im.naturalWidth, h:im.naturalHeight};
+      const m = _st(); if(m) m.activa = false;
+      S.rec = recCubrir(); pintarTodo(); Hist.marcar(); toast("Original restaurado ↩"); });
+  }
+  /* Comparar: mientras se mantiene pulsado el botón, muestra el ORIGINAL. */
+  async function comparar(verOriginal){
+    const m = S.medio && S.medio.mejora; if(!m || !m.urlMejorada) return;
+    const im = await cargarImg(verOriginal ? S.medio.original : m.urlMejorada);
+    if(im){ elMedio = im; dibujar(); }
+  }
+  return {analizar, aplicar, auto, restaurar, comparar, CAMPOS, _st};
+})();
+
+function pintarMejora(){
+  const c = $("#mejora"); if(!c) return;
+  if(!S.medio || esVideo()){
+    c.innerHTML = `<div style="font-size:12px;color:var(--ui-texto2)">Carga una foto: se analiza y, si tiene baja resolución o compresión, se mejora sola.</div>`;
+    return;
+  }
+  const m = Mejora._st(), info = m.info || {};
+  const acc = "var(--est-acento)", avisoTxt = "var(--est-aviso)";   // cromo del estudio, no la marca del perfil
+  let estado;
+  if(m.cargando) estado = `<div style="font-weight:600">⏳ Mejorando la foto…</div>`;
+  else if(info.ok){
+    const ico = info.necesita ? "⚠️" : "✓";
+    estado = `<div style="font-weight:600;color:${info.necesita?avisoTxt:'var(--ui-texto2)'}">${ico} ${esc(info.etiqueta||"")}`
+      + (info.necesita ? " — " + esc(info.motivo) : "")
+      + (m.activa ? ` · <span style="color:var(--est-exito)">Mejora aplicada ✓</span>` : "") + `</div>`
+      + `<div style="font-size:11px;color:var(--ui-texto2)">${info.w}×${info.h}px`
+      + (m.activa && S.medio.nat ? ` → <b>${S.medio.nat.w}×${S.medio.nat.h}px</b>` : "") + `</div>`;
+  } else estado = "";
+  const niv = (v,l)=>`<button class="p-btn" data-niv="${v}" style="flex:1${m.nivel===v?`;background:${acc};color:#fff`:""}">${l}</button>`;
+  const p = m.params || {};
+  const sld = (id,lab)=>{ const v = p[id]; const auto = (v==null||v<0);
+    return `<div class="fila"><label>${lab}${auto?' <span style="opacity:.5">(auto)</span>':''}</label>
+      <input type="range" id="mej-${id}" min="0" max="100" step="1" value="${auto?50:v}" title="doble clic = automático"></div>`; };
+  const res = p.resolucion;
+  c.innerHTML = estado
+    + `<div class="fila" style="gap:4px;margin-top:6px">${niv("suave","Suave")}${niv("auto","Automática")}${niv("intensiva","Intensiva")}</div>`
+    + sld("nitidez","Nitidez") + sld("ruido","Reducción de ruido") + sld("claridad","Claridad")
+    + `<div class="fila" style="gap:4px"><label>Resolución</label>
+        <button class="p-btn" data-res="-1" style="flex:1${(res==null||res<0)?`;background:${acc};color:#fff`:""}">Auto</button>
+        <button class="p-btn" data-res="2048" style="flex:1${res===2048?`;background:${acc};color:#fff`:""}">Máxima</button></div>`
+    + `<div class="fila" style="gap:4px;margin-top:6px">
+        <button class="p-btn" id="mej-comp" style="flex:1" title="Mantén pulsado para ver el original">⇆ Comparar</button>
+        <button class="p-btn" id="mej-rest" style="flex:1">↩ Restaurar original</button></div>`
+    + `<div style="font-size:11px;color:var(--ui-texto2)">Brillo, contraste y color: en «Revelado» (instantáneo). La mejora nunca borra tu foto original.</div>`;
+  c.querySelectorAll("[data-niv]").forEach(b=>b.onclick=()=>Mejora.aplicar(b.dataset.niv, null, true));
+  ["nitidez","ruido","claridad"].forEach(k=>{ const el = $("#mej-"+k); if(!el) return;
+    el.onchange = ()=>Mejora.aplicar(m.nivel, {[k]:+el.value}, false);      // al SOLTAR (caché hace repetidos instantáneos)
+    el.ondblclick = ()=>{ delete m.params[k]; Mejora.aplicar(m.nivel, null, false); }; });
+  c.querySelectorAll("[data-res]").forEach(b=>b.onclick=()=>{ const v = +b.dataset.res;
+    if(v<0) delete m.params.resolucion; else m.params.resolucion = v; Mejora.aplicar(m.nivel, null, true); });
+  const comp = $("#mej-comp");
+  if(comp){ const ver=()=>Mejora.comparar(true), quitar=()=>Mejora.comparar(false);
+    comp.onmousedown = ver; comp.onmouseup = quitar; comp.onmouseleave = quitar;
+    comp.ontouchstart = e=>{ e.preventDefault(); ver(); }; comp.ontouchend = quitar; }
+  const rest = $("#mej-rest"); if(rest) rest.onclick = ()=>Mejora.restaurar();
+}
+
+/* Formatos disponibles para video (los que tienen overlays): 16:9 y 9:16 */
+const FORMATOS_VIDEO_OK = ["horizontal_1920x1080", "estado_1080x1920"];
+
+function aplicarFormato(clave){
+  if(!CFG.formatos_foto[clave]) clave = Object.keys(CFG.formatos_foto)[0];   // formato guardado que este perfil no trae
+  S.formato = clave;
+  const f = CFG.formatos_foto[clave];
+  S.W = f.px[0]; S.H = f.px[1];
+  const cv = $("#lienzo"); cv.width = S.W; cv.height = S.H;
+  if(elMedio) S.rec = recCubrir();
+  ajustarVista(); pintarFormatos(); pintarComponentes(); pintarEstado(); dibujar();
+}
+
+/* recuadre "cover" centrado para el medio actual */
+function recCubrir(){
+  const n = S.medio.nat, razon = S.W/S.H;
+  let w = n.w, h = Math.round(w/razon);
+  if(h > n.h){ h = n.h; w = Math.round(h*razon); }
+  return {x: Math.round((n.w-w)/2), y: Math.round((n.h-h)/2), w, h};
+}
+function limitarRec(){
+  const n = S.medio.nat, r = S.rec;
+  r.w = clamp(r.w, 40, n.w); r.h = Math.round(r.w * S.H/S.W);
+  if(r.h > n.h){ r.h = n.h; r.w = Math.round(r.h * S.W/S.H); }
+  r.x = clamp(r.x, 0, n.w - r.w); r.y = clamp(r.y, 0, n.h - r.h);
+}
+
+/* ---------------- Historial (deshacer / rehacer) ---------------- */
+const Hist = {
+  pila: [], pos: -1,
+  foto(){ return JSON.stringify({formato:S.formato, rec:S.rec, ajustes:{...S.ajustes}, video:{...S.video, segs:(S.video.segs||[]).map(s=>({...s}))},
+    marco:{...S.marco}, rotulo:{...S.rotulo}, mosca:{...S.mosca},
+    cintillo:S.cintillo && {...S.cintillo}, textos:S.textos.map(t=>({...t}))}); },
+  marcar(){ const f = this.foto(); if(f === this.pila[this.pos]) return;
+    this.pila = this.pila.slice(0, this.pos+1); this.pila.push(f);
+    if(this.pila.length > 60) this.pila.shift(); this.pos = this.pila.length-1; },
+  aplicar(f){ const d = JSON.parse(f);
+    if(d.formato !== S.formato) aplicarFormato(d.formato);
+    S.rec = d.rec; if(d.ajustes) S.ajustes = {...S.ajustes, ...d.ajustes};
+    Object.assign(S.video, d.video);
+    if(!S.video.segs || !S.video.segs.length)
+      S.video.segs = [{ini:S.video.ini||0, fin:S.video.fin||S.video.dur||0}];
+    S.marco = d.marco; S.rotulo = d.rotulo; S.mosca = d.mosca;
+    S.cintillo = d.cintillo; S.textos = d.textos;
+    pintarTodo(); },
+  atras(){ if(this.pos > 0){ this.pos--; this.aplicar(this.pila[this.pos]); } },
+  adelante(){ if(this.pos < this.pila.length-1){ this.pos++; this.aplicar(this.pila[this.pos]); } },
+};
+
+/* ---------------- Medios (cargar / subir) ---------------- */
+async function usarMedio(url, tipo, nombre){
+  detenerVideo();
+  if(tipo === "foto"){
+    const im = await cargarImg(url);
+    if(!im){ toast("No se pudo cargar la imagen"); return; }
+    elMedio = im;
+    S.medio = {tipo, url, nombre, nat:{w:im.naturalWidth, h:im.naturalHeight}};
+  }else{
+    const v = document.createElement("video");
+    v.src = url; v.muted = true; v.playsInline = true; v.preload = "auto";
+    await new Promise((res,rej)=>{ v.onloadedmetadata=res; v.onerror=rej; })
+      .catch(()=>toast("No se pudo cargar el video"));
+    elMedio = v;
+    S.medio = {tipo, url, nombre, nat:{w:v.videoWidth, h:v.videoHeight}};
+    S.video = {ini:0, fin:v.duration, dur:v.duration, segs:[{ini:0, fin:v.duration}]};
+    if(!FORMATOS_VIDEO_OK.includes(S.formato))
+      aplicarFormato(S.medio.nat.w >= S.medio.nat.h ? "horizontal_1920x1080" : "estado_1080x1920");
+    v.currentTime = 0;
+  }
+  S.rec = recCubrir(); S.sel = "medio";
+  $("#timeline").classList.toggle("activo", esVideo());
+  pintarTodo(); Hist.marcar();
+  // Mejora automática de calidad (no destructiva) al incorporar una FOTO: se
+  // muestra ya la original y, en segundo plano, el servidor la realza y la
+  // sustituye si hace falta. Así no se ve pixelada en las publicaciones.
+  if(tipo === "foto") Mejora.auto(url);
+}
+
+async function subirArchivo(archivo){
+  const esVid = archivo.type.startsWith("video");
+  toast("Subiendo al banco del despacho…", 6000);
+  try{
+    const r = await fetch(api("/api/subir"), {method:"POST",
+      headers:{"X-Nombre": encodeURIComponent(archivo.name),
+               "Content-Type": archivo.type || "application/octet-stream"},
+      body: archivo});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error);
+    await cargarBanco();
+    await usarMedio(d.url, esVid ? "video" : "foto", archivo.name);
+    toast("Guardado en el banco (subidas-editor) y cargado ✓");
+  }catch(e){ toast("Error al subir: " + e.message); }
+}
+
+/* ================== MARCOS NATIVOS (100 % editables) ==================
+   Cada estilo de marco se DIBUJA en el lienzo (no es un PNG fijo): el usuario
+   edita textos, colores por rol, tamaño, opacidad y elementos (logo, monograma,
+   faja, obelisco…). Los PNG de plantillas/marco_foto_video quedan solo para el
+   flujo por consola (aplicar_marco.py); el editor ya no depende de ellos. */
+
+const MKASSETS = {};      // imágenes de insumos precargadas (logo, obelisco, recorte)
+
+const MK = {
+  /* Zonas interactivas del marco (se registran al dibujar): permiten
+     seleccionar el marco con un clic y ARRASTRAR su bloque de firma.
+     _dx/_dy = desplazamiento del texto elegido por el usuario (P.textoDX/DY). */
+  _zonas: [], _dx: 0, _dy: 0,
+  zona(el, x, y, w, h){ MK._zonas.push({el, x, y, w, h}); },
+  hx(hex, a=1){ const h = String(hex).replace("#","");
+    return `rgba(${parseInt(h.slice(0,2),16)},${parseInt(h.slice(2,4),16)},${parseInt(h.slice(4,6),16)},${a})`; },
+  texto(ctx, t, x, y, o){
+    ctx.save();
+    ctx.font = `${o.peso||700} ${o.px}px "${o.familia||"Archivo"}"`;
+    ctx.fillStyle = o.color; ctx.textBaseline = "top"; ctx.textAlign = "left";
+    const track = (o.track||0) * o.px; let cx = x;
+    for(const ch of String(t)){ ctx.fillText(ch, cx, y); cx += ctx.measureText(ch).width + track; }
+    ctx.restore(); return Math.max(0, cx - track - x);
+  },
+  ancho(ctx, t, o){ ctx.save();
+    ctx.font = `${o.peso||700} ${o.px}px "${o.familia||"Archivo"}"`;
+    const track = (o.track||0) * o.px; let w = 0;
+    for(const ch of String(t)) w += ctx.measureText(ch).width + track;
+    ctx.restore(); return Math.max(0, w - track); },
+  ajustar(ctx, t, o, maxW){ let px = o.px;
+    while(px > 8 && MK.ancho(ctx, t, {...o, px}) > maxW) px--; return px; },
+  circulo(ctx, x, y, r, color){ ctx.save(); ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI*2); ctx.fill(); ctx.restore(); },
+  rrect(ctx, x, y, w, h, r, color){ ctx.save(); ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, Math.min(r, w/2, h/2)); ctx.fill(); ctx.restore(); },
+  degV(ctx, x, y, w, h, hex, aMax=0.95, invertido=false){
+    const g = ctx.createLinearGradient(0, invertido ? y+h : y, 0, invertido ? y : y+h);
+    for(let i=0; i<=6; i++){ const t = i/6; g.addColorStop(t, MK.hx(hex, aMax*Math.pow(t, 1.65))); }
+    ctx.save(); ctx.fillStyle = g; ctx.fillRect(x, y, w, h); ctx.restore(); },
+  rombo(ctx, cx, cy, u, pasos, color){ ctx.save(); ctx.fillStyle = color;
+    const filas = pasos*2 - 1, y0 = cy - filas*u/2;
+    for(let i=0; i<filas; i++){ const un = (i<pasos ? i+1 : filas-i)*2 - 1, w = un*u;
+      ctx.fillRect(cx - w/2, y0 + i*u, w, u); }
+    ctx.restore(); },
+  ondaPath(ctx, W, H, y0, amp, lam, fase){ ctx.beginPath(); ctx.moveTo(0, H);
+    ctx.lineTo(0, y0 + amp*Math.sin(fase));
+    for(let x=0; x<=W; x+=6) ctx.lineTo(x, y0 + amp*Math.sin(2*Math.PI*x/lam + fase));
+    ctx.lineTo(W, H); ctx.closePath(); },
+  img(clave){ return MKASSETS[clave] || null; },
+  dibImg(ctx, im, x, y, w, h, alfa=1){ if(!im) return; ctx.save();
+    ctx.globalAlpha *= alfa; ctx.drawImage(im, x, y, w, h); ctx.restore(); },
+  monograma(ctx, x, y, d, C, oscuro=true){
+    /* El monograma fue RETIRADO del sistema: en su lugar va el LEMA oficial
+       «Lema del despacho» (imagen), con el borde derecho en x+d. */
+    const im = MK.img(oscuro ? "lema_oscuro" : "lema") || MK.img("lema_oscuro") || MK.img("lema");
+    if(!im) return;
+    const w = Math.min(d * (im.width/im.height), d*2.9);
+    ctx.drawImage(im, x + d - w, y, w, d);
+  },
+  pastillaFirma(ctx, x, y, alto, nombre, rol, C, cols){
+    const px = Math.round(alto*0.42), padH = Math.round(alto*0.55), gap = Math.round(alto*0.28);
+    const oN = {px, peso:800, track:0.01};
+    const oR = {px:Math.round(px*0.92), peso:600, familia:"Source Sans 3", track:0.08};
+    const w = padH*2 + MK.ancho(ctx, nombre, oN) + gap + MK.ancho(ctx, "·", {px, peso:700})
+              + gap + MK.ancho(ctx, rol, oR);
+    const x2 = x + MK._dx, y2 = y + MK._dy;
+    MK.rrect(ctx, x2, y2, w, alto, alto/2, MK.hx(C.tinta, 0.92));
+    let cx = x2 + padH; const ty = y2 + (alto - px)/2;
+    cx += MK.texto(ctx, nombre, cx, ty, {...oN, color:cols?.nombre || C.papel});
+    cx += gap; cx += MK.texto(ctx, "·", cx, ty, {px, peso:700, color:cols?.punto || C.qillu});
+    cx += gap; MK.texto(ctx, rol, cx, ty + px*0.06, {...oR, color:cols?.rol || C.neutral300});
+    MK.zona("textos", x2, y2, w, alto);
+    return {w, h:alto};
+  },
+  firmaLibre(ctx, x, yBase, pxN, nombre, rol, colNombre, colRol, colRegla){
+    const pxR = Math.round(pxN*0.52), gap = Math.round(pxN*0.30);
+    const alto = pxN + gap + pxR, y0 = yBase - alto;
+    const x2 = x + MK._dx, y02 = y0 + MK._dy;
+    const espRegla = colRegla ? Math.max(4, Math.round(pxN*0.12)) + Math.round(pxN*0.45) : 0;
+    if(colRegla){ const g = Math.max(4, Math.round(pxN*0.12));
+      ctx.save(); ctx.fillStyle = colRegla;
+      ctx.fillRect(x2, y02 - g - Math.round(pxN*0.45), Math.round(pxN*1.9), g); ctx.restore(); }
+    MK.texto(ctx, nombre, x2, y02, {px:pxN, peso:800, color:colNombre, track:0.01});
+    MK.texto(ctx, rol, x2, y02 + pxN + gap, {px:pxR, peso:600, color:colRol, track:0.10});
+    const wZona = Math.max(MK.ancho(ctx, nombre, {px:pxN, peso:800, track:0.01}),
+                           MK.ancho(ctx, rol, {px:pxR, peso:600, track:0.10}),
+                           Math.round(pxN*1.9));
+    MK.zona("textos", x2, y02 - espRegla, wZona, alto + espRegla);
+    return alto;
+  },
+  franjaFirma(ctx, W, H, B, nombre, rol, cB){
+    ctx.save(); ctx.fillStyle = cB.fondo; ctx.fillRect(0, H-B, W, B);
+    if(cB.linea){ const g = Math.max(4, Math.round(B*0.05));
+      ctx.fillStyle = cB.linea; ctx.fillRect(0, H-B, W, g); }
+    ctx.restore();
+    const margen = Math.max(40, Math.round(W*0.045)), rp = Math.max(6, Math.round(B*0.075));
+    const xT = margen + rp*2 + Math.round(B*0.11), maxW = W - xT - margen;
+    const oN = {px:Math.round(B*0.32), peso:800, track:0.01};
+    oN.px = MK.ajustar(ctx, nombre, oN, maxW);
+    const oR = {px:Math.round(B*0.175), peso:600, track:0.10};
+    oR.px = MK.ajustar(ctx, rol, oR, maxW);
+    const gap = Math.round(B*0.09), y0 = H - B + (B - (oN.px + gap + oR.px))/2;
+    const dx = MK._dx, dy = MK._dy;
+    MK.circulo(ctx, margen + rp + dx, y0 + Math.round(oN.px*0.55) + dy, rp, cB.punto);
+    MK.texto(ctx, nombre, xT + dx, y0 + dy, {...oN, color:cB.nombre});
+    MK.texto(ctx, rol, xT + dx, y0 + oN.px + gap + dy, {...oR, color:cB.rol});
+    const wZona = (xT - margen) + Math.max(MK.ancho(ctx, nombre, oN), MK.ancho(ctx, rol, oR));
+    MK.zona("textos", margen + dx, y0 + dy, wZona, oN.px + gap + oR.px);
+  },
+};
+
+/* Registro de estilos. Cada uno: nombre visible, controles que muestra el panel,
+   roles de color (editables por el usuario) y su función de dibujo. */
+const MARCOS = {
+  tinta: {
+    nombre: "Tinta (estándar)",
+    controles: ["textos","colores","escala","opacidad","recorte"],
+    roles: {banda:"tinta", linea:"qillu", nombre:"papel", rol:"qillu", punto:"qillu"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      MK.franjaFirma(ctx, W, H, B, env.nombre, env.rol,
+        {fondo:env.col("banda"), linea:env.col("linea"),
+         nombre:env.col("nombre"), rol:env.col("rol"), punto:env.col("punto")});
+      if(P.recorte){
+        const im = MK.img("recorte");
+        if(im && im.height > 0){
+          const h = Math.round(B*2.05), w = Math.round(im.width*h/im.height);
+          ctx.save(); ctx.shadowColor = "rgba(20,15,12,.45)";
+          ctx.shadowBlur = Math.round(B*0.07);
+          ctx.drawImage(im, W-w, H-h, w, h); ctx.restore();
+        }
+      }
+    },
+  },
+  claro: {
+    nombre: "Claro",
+    controles: ["textos","colores","escala","opacidad","recorte"],
+    roles: {"banda":"blanco","linea":"puka","nombre":"texto","rol":"puka","punto":"puka"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      MK.franjaFirma(ctx, W, H, B, env.nombre, env.rol,
+        {fondo: env.col("banda"), linea: env.col("linea"),
+         nombre: env.col("nombre"), rol: env.col("rol"), punto: env.col("punto")});
+      if(P.recorte){
+        const im = MK.img("recorte");
+        if(im && im.height > 0){
+          const h = Math.round(B*2.05), w = Math.round(im.width*h/im.height);
+          ctx.save(); ctx.shadowColor = "rgba(20,15,12,.45)";
+          ctx.shadowBlur = Math.round(B*0.07);
+          ctx.drawImage(im, W-w, H-h, w, h); ctx.restore();
+        }
+      }
+    },
+  },
+  institucional: {
+    nombre: "Institucional · logos",
+    controles: ["textos","colores","escala","opacidad","logo","monograma","filete"],
+    roles: {"fondo":"blanco","linea":"puka","filete":"puka","nombre":"tinta","chip":"qillu","chipTexto":"qillu900","divisor":"neutral300"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      // Banda de firma blanca al pie
+      ctx.fillStyle = env.col("fondo");
+      ctx.fillRect(0, H - B, W, B);
+      // Linea superior de la banda
+      const g = Math.max(5, Math.round(B * 0.05));
+      ctx.fillStyle = env.col("linea");
+      ctx.fillRect(0, H - B, W, g);
+      // Filete exterior: arriba, izquierda y derecha (NO abajo)
+      if(P.filete){
+        const t = Math.max(6, Math.round(Math.min(W, H) * 0.009));
+        ctx.fillStyle = env.col("filete");
+        ctx.fillRect(0, 0, W, t);
+        ctx.fillRect(0, 0, t, H);
+        ctx.fillRect(W - t, 0, t, H);
+      }
+      const margen = Math.max(40, Math.round(W * 0.045));
+      const zona = B - g;
+      let x = margen;
+      // Imagotipo del Congreso + divisor vertical
+      if(P.logo){
+        const im = MK.img("logo_color");
+        if(im && im.height > 0){
+          const lh = Math.round(zona * 0.60);
+          const lw = Math.round(im.width * lh / im.height);
+          const ly = H - B + g + Math.floor((zona - lh) / 2);
+          MK.dibImg(ctx, im, x, ly, lw, lh);
+          x += lw + Math.round(B * 0.22);
+          const dy0 = H - B + g + Math.round(zona * 0.22);
+          const dy1 = H - g - Math.round(zona * 0.22);
+          ctx.fillStyle = env.col("divisor");
+          ctx.fillRect(x, dy0, 2, Math.max(0, dy1 - dy0));
+          x += Math.round(B * 0.22);
+        }
+      }
+      // Monograma (disco) a la derecha; su espacio se reserva siempre, como en PIL
+      const disco = Math.round(zona * 0.62);
+      if(P.monograma){
+        MK.monograma(ctx, W - margen - disco, H - B + g + Math.floor((zona - disco) / 2), disco, env.C, false);
+      }
+      // Bloque de texto: nombre extrabold + chip rectangular del cargo
+      const maxAncho = W - x - margen - disco - Math.round(B * 0.3);
+      const pxN = MK.ajustar(ctx, env.nombre, {px: Math.round(zona * 0.30), peso: 800, track: 0.01}, maxAncho);
+      const pxR = MK.ajustar(ctx, env.rol, {px: Math.round(zona * 0.165), peso: 700, track: 0.08}, maxAncho);
+      const padH = Math.round(pxR * 0.55);
+      const padV = Math.round(pxR * 0.32);
+      const altoChip = pxR + padV * 2;
+      const altoBloque = pxN + Math.round(zona * 0.10) + altoChip;
+      const y0 = H - B + g + Math.floor((zona - altoBloque) / 2);
+      ctx.save(); ctx.translate(MK._dx, MK._dy);
+      MK.texto(ctx, env.nombre, x, y0, {px: pxN, peso: 800, color: env.col("nombre"), track: 0.01});
+      const yChip = y0 + pxN + Math.round(zona * 0.10);
+      const wRol = MK.ancho(ctx, env.rol, {px: pxR, peso: 700, track: 0.08});
+      ctx.fillStyle = env.col("chip");
+      ctx.fillRect(x, yChip, padH * 2 + Math.round(wRol), altoChip);
+      MK.texto(ctx, env.rol, x + padH, yChip + padV, {px: pxR, peso: 700, color: env.col("chipTexto"), track: 0.08});
+      ctx.restore();
+      const wNom = MK.ancho(ctx, env.nombre, {px: pxN, peso: 800, track: 0.01});
+      MK.zona("textos", x + MK._dx, y0 + MK._dy,
+              Math.max(wNom, padH * 2 + Math.round(wRol)), altoBloque);
+    },
+  },
+  chumpi: {
+    nombre: "Chumpi andino",
+    controles: ["textos","colores","escala","opacidad","faja"],
+    roles: {"fondoFaja":"vino","filete":"papel","rombo":"qillu","romboAlterno":"papel","centro":"puka","banda":"tinta","nombre":"papel","rol":"qillu","punto":"qillu"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      if(P.faja){
+        const F = Math.round(B * 0.42);
+        const yTop = Math.round(H - B - F);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(0, yTop, W, F);
+        ctx.clip();
+        ctx.fillStyle = env.col("fondoFaja");
+        ctx.fillRect(0, yTop, W, F);
+        const fil = Math.max(2, Math.round(F * 0.05));
+        ctx.fillStyle = env.col("filete");
+        ctx.fillRect(0, yTop, W, fil);
+        ctx.fillRect(0, Math.round(H - B - fil), W, fil);
+        const pasos = 4;
+        const u = Math.round(F * 0.72) / (pasos * 2 - 1);
+        const pasoX = u * (pasos * 2 - 1) + u * 4;
+        const n = Math.ceil(W / pasoX) + 1;
+        const cy = Math.round(H - B - F / 2);
+        for(let i = 0; i < n; i++){
+          const cx = Math.round(pasoX / 2 + i * pasoX);
+          const par = (i % 2 === 0);
+          const c = par ? env.col("rombo") : env.col("romboAlterno");
+          MK.rombo(ctx, cx, cy, u, pasos, c);
+          MK.rombo(ctx, cx, cy, u, 2, env.col("fondoFaja"));
+          MK.circulo(ctx, cx, cy, Math.max(2, Math.round(u * 0.55)),
+                     par ? env.col("centro")
+                         : ((P.colores && P.colores.centro) ? env.col("centro")
+                                                            : env.C.puka700));
+        }
+        ctx.restore();
+      }
+      MK.franjaFirma(ctx, W, H, B, env.nombre, env.rol,
+        {fondo: env.col("banda"), linea: null,
+         nombre: env.col("nombre"), rol: env.col("rol"), punto: env.col("punto")});
+    },
+  },
+  degradado: {
+    nombre: "Degradado",
+    controles: ["textos","colores","escala","opacidad","intensidad","monograma"],
+    roles: {"veladura":"tinta","nombre":"papel","rol":"qillu","regla":"qillu"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      const G = Math.round(B * 2.6);
+      const aMax = Math.min(1, 0.95 * (P.intensidad || 1));
+      MK.degV(ctx, 0, H - G, W, G, env.col("veladura"), aMax);
+      const margen = Math.max(40, Math.round(W * 0.045));
+      const yBase = H - Math.round(B * 0.42);
+      MK.firmaLibre(ctx, margen, yBase, Math.round(B * 0.34), env.nombre, env.rol,
+        env.col("nombre"), env.col("rol"), env.col("regla"));
+      if(P.monograma){
+        const disco = Math.round(B * 0.52);
+        ctx.save();
+        ctx.globalAlpha *= 0.92;
+        MK.monograma(ctx, W - margen - disco, yBase - disco, disco, env.C);
+        ctx.restore();
+      }
+    },
+  },
+  esquinas: {
+    nombre: "Esquinas geométricas",
+    controles: ["textos","colores","escala","opacidad","pastilla"],
+    roles: {"barraA":"puka","barraB":"qillu","barraC":"vino","barraD":"papel","disco":"qillu","punto":"puka","nombre":"papel","rol":"neutral300","puntoPastilla":"qillu"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      const u = Math.round(B * 0.34);
+    
+      function grupo(ox, oy, dx, dy){
+        const p = (x, y) => [ox + dx * Math.round(x * u), oy + dy * Math.round(y * u)];
+        const R = (a, b, hex, alfa, radio) => {
+          const x0 = Math.min(a[0], b[0]), y0 = Math.min(a[1], b[1]);
+          const x1 = Math.max(a[0], b[0]), y1 = Math.max(a[1], b[1]);
+          const r = (radio == null) ? Math.round(u * 0.45) : radio;
+          MK.rrect(ctx, x0, y0, x1 - x0, y1 - y0, r, MK.hx(hex, alfa / 255));
+        };
+    
+        // Cuarto de disco hacia adentro, centrado en el vertice (pieslice PIL)
+        const ang0 = (dx > 0) ? 0 : Math.PI;
+        ctx.beginPath();
+        ctx.moveTo(ox, oy);
+        ctx.arc(ox, oy, Math.round(u * 2.3), ang0, ang0 + Math.PI / 2);
+        ctx.closePath();
+        ctx.fillStyle = MK.hx(env.col("disco"), 185 / 255);
+        ctx.fill();
+    
+        // Barras pegadas al borde
+        R(p(0, 0), p(6.5, 0.9), env.col("barraA"), 235);
+        R(p(0, 0), p(0.9, 5.0), env.col("barraC"), 230);
+        // Flotantes solapadas
+        R(p(1.2, 0.45), p(4.6, 1.75), env.col("barraB"), 215);
+        R(p(0.45, 1.2), p(1.75, 3.8), env.col("barraD"), 210);
+    
+        // Lineas finas
+        const f = Math.max(3, Math.round(u * 0.13));
+        const la = p(0, 2.4);
+        R(la, [ox + dx * Math.round(5.6 * u), la[1] + dy * f], env.col("disco"), 255, f);
+        const lb = p(3.2, 0);
+        R(lb, [lb[0] + dx * f, oy + dy * Math.round(3.9 * u)], env.col("barraD"), 235, f);
+    
+        // Punto
+        const c = p(4.7, 2.45);
+        MK.circulo(ctx, c[0], c[1], Math.round(u * 0.5), env.col("punto"));
+      }
+    
+      grupo(0, 0, 1, 1);
+      grupo(W, H, -1, -1);
+    
+      if(P.pastilla){
+        const alto = Math.round(B * 0.46);
+        const margen = Math.max(40, Math.round(W * 0.045));
+        MK.pastillaFirma(ctx, margen, H - margen - alto, alto, env.nombre, env.rol, env.C,
+          {nombre: env.col("nombre"), rol: env.col("rol"), punto: env.col("puntoPastilla")});
+      }
+    },
+  },
+  puntos: {
+    nombre: "Puntos (halftone)",
+    controles: ["textos","colores","escala","opacidad","intensidad"],
+    roles: {"puntosA":"qillu","puntosB":"puka","banda":"tinta","linea":"qillu","nombre":"papel","rol":"qillu","punto":"qillu"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      const inten = P.intensidad || 1;
+      const Bs = Math.round(B * 0.66);
+    
+      // Abanico halftone: rejilla de puntos cuyo radio decae con la distancia al origen.
+      // cx==0 => crece hacia la derecha; cx==W => crece hacia la izquierda.
+      // cy==0 => crece hacia abajo;     cy==H-Bs => crece hacia arriba.
+      function abanico(cx, cy, alcance, rMax, color, alfa){
+        if(rMax < 1 || alcance <= 0) return;
+        const paso = Math.round(rMax * 2.35);
+        if(paso <= 0) return;
+        const fill = MK.hx(color, alfa);
+        for(let gy = 0; gy <= alcance + paso; gy += paso){
+          for(let gx = 0; gx <= alcance + paso; gx += paso){
+            const x = (cx === 0) ? cx + gx : cx - gx;
+            const y = (cy === 0) ? cy + gy : cy - gy;
+            const dist = Math.hypot(gx, gy);
+            if(dist > alcance) continue;
+            const r = Math.round(rMax * Math.pow(1 - dist/alcance, 1.25));
+            if(r >= 2) MK.circulo(ctx, Math.round(x), Math.round(y), r, fill);
+          }
+        }
+      }
+    
+      // Abanico A: esquina inferior izquierda, apoyado sobre el borde superior de la banda esbelta.
+      abanico(0, H - Bs, Math.round(Math.min(W, H) * 0.52),
+              Math.round(B * 0.085 * inten), env.col("puntosA"), 225/255);
+      // Abanico B: esquina superior derecha.
+      abanico(W, 0, Math.round(Math.min(W, H) * 0.40),
+              Math.round(B * 0.07 * inten), env.col("puntosB"), 215/255);
+    
+      // Banda de firma esbelta con linea superior gruesa especial.
+      const grosor = Math.max(4, Math.round(Bs * 0.055));
+      MK.franjaFirma(ctx, W, H, Bs, env.nombre, env.rol,
+        {fondo: env.col("banda"), linea: null,
+         nombre: env.col("nombre"), rol: env.col("rol"), punto: env.col("punto")});
+      ctx.fillStyle = env.col("linea");
+      ctx.fillRect(0, H - Bs, W, grosor);
+    },
+  },
+  ondas: {
+    nombre: "Ondas",
+    controles: ["textos","colores","escala","opacidad"],
+    roles: {"ondaFondo":"qillu","ondaMedia":"puka","ondaFrente":"vino","nombre":"papel","rol":"qillu"},
+    draw(ctx, env){
+      const {W, H, B} = env;
+      MK.ondaPath(ctx, W, H, Math.round(H - B*1.72), Math.round(B*0.30), Math.round(W*0.95), 0.6);
+      ctx.fillStyle = env.col("ondaFondo");
+      ctx.fill();
+      MK.ondaPath(ctx, W, H, Math.round(H - B*1.30), Math.round(B*0.26), Math.round(W*0.80), 2.6);
+      ctx.fillStyle = env.col("ondaMedia");
+      ctx.fill();
+      MK.ondaPath(ctx, W, H, Math.round(H - B*0.86), Math.round(B*0.20), Math.round(W*1.10), 4.9);
+      ctx.fillStyle = env.col("ondaFrente");
+      ctx.fill();
+      const margen = Math.max(40, Math.round(W*0.045));
+      MK.firmaLibre(ctx, margen, H - Math.round(B*0.22), Math.round(B*0.30),
+        env.nombre, env.rol, env.col("nombre"), env.col("rol"), null);
+    },
+  },
+  quinua: {
+    nombre: "Obelisco de la Quinua",
+    controles: ["textos","colores","escala","opacidad","intensidad","obelisco"],
+    roles: {"veladura":"vino","nombre":"papel","rol":"qillu","regla":"qillu"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      const G = Math.round(B * 2.9);
+      const aVel = Math.min(1, 0.96 * (P.intensidad || 1));
+      MK.degV(ctx, 0, H - G, W, G, env.col("veladura"), aVel);
+      const margen = Math.max(40, Math.round(W * 0.045));
+      if(P.obelisco){
+        const im = MK.img("obelisco");
+        if(im && im.height > 0){
+          const h = Math.round(B * 2.4);
+          const w = Math.round(im.width * h / im.height);
+          MK.dibImg(ctx, im, W - w - margen, H - h - Math.round(B * 0.28), w, h, 0.5);
+        }
+      }
+      MK.firmaLibre(ctx, margen, H - Math.round(B * 0.42), Math.round(B * 0.34),
+        env.nombre, env.rol, env.col("nombre"), env.col("rol"), env.col("regla"));
+    },
+  },
+  borde: {
+    nombre: "Borde clásico",
+    controles: ["textos","colores","escala","opacidad","pastilla"],
+    roles: {"marco":"puka","filete":"qillu","nombre":"papel","rol":"neutral300","punto":"qillu"},
+    draw(ctx, env){
+      const {W, H, B, P} = env;
+      const mn = Math.min(W, H);
+      const m = Math.round(mn * 0.030);
+      const t1 = Math.max(5, Math.round(mn * 0.0075));
+      const sep = t1 + Math.max(3, Math.round(t1 * 0.9));
+      const t2 = Math.max(2, Math.floor(t1 / 3));
+      ctx.save();
+      // Marco exterior en trazo (PIL dibuja el grosor hacia adentro del rect [m, m, W-m, H-m]);
+      // en canvas el trazo se centra en el path, asi que insetamos t1/2 para igualar la geometria.
+      ctx.strokeStyle = env.col("marco");
+      ctx.lineWidth = t1;
+      ctx.strokeRect(m + t1 / 2, m + t1 / 2, W - 2 * m - t1, H - 2 * m - t1);
+      // Filete interior
+      ctx.strokeStyle = env.col("filete");
+      ctx.lineWidth = t2;
+      ctx.strokeRect(m + sep + t2 / 2, m + sep + t2 / 2, W - 2 * (m + sep) - t2, H - 2 * (m + sep) - t2);
+      ctx.restore();
+      if(P.pastilla){
+        const alto = Math.round(B * 0.44);
+        // Ancho por la misma formula que usa MK.pastillaFirma, para poder centrarla.
+        const px = Math.round(alto * 0.42);
+        const padH = Math.round(alto * 0.55);
+        const gap = Math.round(alto * 0.28);
+        const w = padH * 2
+          + MK.ancho(ctx, env.nombre, {px: px, peso: 800, track: 0.01}) + gap
+          + MK.ancho(ctx, ".", {px: px, peso: 700}) + gap
+          + MK.ancho(ctx, env.rol, {px: Math.round(px * 0.92), peso: 600, familia: "Source Sans 3", track: 0.08});
+        const x = Math.round((W - w) / 2);
+        const y = H - Math.round(mn * 0.030) - Math.round(B * 0.18) - alto;
+        MK.pastillaFirma(ctx, x, y, alto, env.nombre, env.rol, env.C,
+          {nombre: env.col("nombre"), rol: env.col("rol"), punto: env.col("punto")});
+      }
+    },
+  },
+};
+
+function modosMarco(){ return Object.keys(MARCOS); }
+
+function dibujarMarcoNativo(ctx){
+  const def = MARCOS[S.marco.modo] || MARCOS.tinta;
+  const P = {...MARCO_DEFAULTS, ...S.marco};
+  const fmt = CFG.formatos_foto[S.formato] || {};
+  const B = Math.max(24, Math.round((fmt.banda_px || S.H*0.14) * (P.escala || 1)));
+  const C = CFG.colores;
+  const env = {
+    W:S.W, H:S.H, B, C, P,
+    nombre: (P.nombre ?? "").trim() || (CFG.textos.nombre || "NOMBRE DEL TITULAR"),
+    rol:    (P.rol ?? "").trim() || (CFG.textos.rol || "CARGO O CIRCUNSCRIPCIÓN"),
+    col: r => (P.colores && P.colores[r]) || C[def.roles[r]] || C.puka,
+  };
+  MK._zonas.length = 0;
+  MK._dx = Math.round(P.textoDX || 0); MK._dy = Math.round(P.textoDY || 0);
+  ctx.save(); ctx.globalAlpha = P.opacidad ?? 1;
+  try{ def.draw(ctx, env); }catch(e){ console.error("marco", S.marco.modo, e); }
+  ctx.restore();
+  MK._dx = 0; MK._dy = 0;
+}
+
+/* ¿El clic cayó SOBRE el marco? Se dibuja el marco en un lienzo de 1×1
+   desplazado al punto y se mira el alfa: exacto para cualquier estilo. */
+const _hitCv = document.createElement("canvas");
+_hitCv.width = _hitCv.height = 1;
+const _hitCx = _hitCv.getContext("2d", {willReadFrequently:true});
+function marcoEnPunto(x, y){
+  if(!S.marco.activo) return false;
+  _hitCx.clearRect(0, 0, 1, 1);
+  _hitCx.save(); _hitCx.translate(-Math.round(x), -Math.round(y));
+  dibujarMarcoNativo(_hitCx);
+  _hitCx.restore();
+  return _hitCx.getImageData(0, 0, 1, 1).data[3] > 25;
+}
+function zonaMarcoEn(x, y){
+  for(const z of MK._zonas)
+    if(x >= z.x - 8 && x <= z.x + z.w + 8 && y >= z.y - 8 && y <= z.y + z.h + 8) return z;
+  return null;
+}
+function urlRotulo(){
+  if(!esVideo()) return null;
+  const tabla = S.formato === "estado_1080x1920"
+    ? CFG.plantillas.rotulos_tiktok : CFG.plantillas.rotulos_16x9;
+  return tabla[slug(S.rotulo.kicker)] || tabla[""];
+}
+
+/* ---------------- Render ---------------- */
+const cv = $("#lienzo"), cx = cv.getContext("2d");
+
+function dibujarTexto(ctx, t){
+  ctx.save(); ctx.globalAlpha = t.opacidad ?? 1;
+  ctx.font = `${t.peso} ${t.px}px "${t.familia}"`;
+  ctx.textBaseline = "top"; ctx.fillStyle = t.color;
+  if(t.sombra){ ctx.shadowColor = "rgba(0,0,0,.55)";
+    ctx.shadowBlur = t.px*.16; ctx.shadowOffsetY = t.px*.05; }
+  const lineas = String(t.texto).split("\n");
+  lineas.forEach((ln,i)=>{
+    let x = t.x;
+    if(t.tracking > 0){
+      for(const ch of ln){ ctx.fillText(ch, x, t.y + i*t.px*1.18);
+        x += ctx.measureText(ch).width + t.tracking*t.px; }
+    }else ctx.fillText(ln, t.x, t.y + i*t.px*1.18);
+  });
+  ctx.restore();
+}
+function medirTexto(ctx, t){
+  ctx.font = `${t.peso} ${t.px}px "${t.familia}"`;
+  let w = 0;
+  for(const ln of String(t.texto).split("\n")){
+    let lw = ctx.measureText(ln).width;
+    if(t.tracking>0) lw += t.tracking*t.px*Math.max(0, ln.length-1);
+    w = Math.max(w, lw);
+  }
+  return {w, h: String(t.texto).split("\n").length * t.px*1.18};
+}
+
+/* Cintillo de contexto — misma receta que _caja_kicker(marcador="guion") */
+function dibujarCintillo(ctx, c){
+  const px = Math.round(S.H*0.024), padH = px, padV = Math.round(px*.5),
+        r = Math.round(px*.3), track = .12;
+  ctx.save(); ctx.font = `700 ${px}px "Archivo"`;
+  let wTxt = 0; for(const ch of c.texto) wTxt += ctx.measureText(ch).width + track*px;
+  wTxt -= track*px;
+  const w = padH*2 + r*2 + Math.round(px*.6) + Math.round(wTxt), h = padV*2 + px;
+  ctx.fillStyle = CFG.colores.puka; ctx.fillRect(c.x, c.y, w, h);
+  const g = Math.max(3, Math.round(px*.16));
+  ctx.fillStyle = CFG.colores.qillu;
+  ctx.fillRect(c.x+padH, c.y+h/2-g/2, r*2, g);
+  ctx.fillStyle = CFG.colores.papel; ctx.textBaseline = "top";
+  let x = c.x + padH + r*2 + Math.round(px*.6);
+  for(const ch of c.texto){ ctx.fillText(ch, x, c.y+padV); x += ctx.measureText(ch).width + track*px; }
+  ctx.restore();
+  return {w,h};
+}
+
+async function dibujar(soloPieza=false, ctxDest=cx){
+  const ctx = ctxDest;
+  ctx.clearRect(0,0,S.W,S.H);
+  // 1 · medio (foto o cuadro de video) con recuadre
+  if(elMedio && S.rec){
+    ctx.save(); ctx.filter = filtroCSS();
+    ctx.drawImage(elMedio, S.rec.x, S.rec.y, S.rec.w, S.rec.h, 0,0,S.W,S.H);
+    ctx.restore();
+  }
+  else if(!soloPieza){
+    ctx.fillStyle = "#2a2622"; ctx.fillRect(0,0,S.W,S.H);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--neutral-600").trim(); ctx.font = `600 ${Math.round(S.W*.035)}px "Archivo"`;
+    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.fillText("Carga una foto o video (panel izquierdo)", S.W/2, S.H/2);
+    ctx.textAlign="start";
+  }
+  await dibujarOverlays(ctx);
+  if(!soloPieza){ dibujarZonas(ctx); dibujarSeleccion(ctx); }
+}
+
+/* Overlays institucionales + textos (lo que se exporta encima del medio) */
+async function dibujarOverlays(ctx){
+  if(S.marco.activo) dibujarMarcoNativo(ctx);
+  if(S.cintillo) dibujarCintillo(ctx, S.cintillo);
+  for(const t of S.textos) dibujarTexto(ctx, t);
+  if(S.rotulo.activo && esVideo()){
+    const im = await cargarImg(urlRotulo());
+    if(im) ctx.drawImage(im, 0,0,S.W,S.H);
+  }
+  if(S.mosca.activo){
+    const im = await cargarImg(CFG.plantillas.mosca);
+    if(im){
+      const e = S.mosca.escala * (S.W>=S.H ? 1 : 1.15);
+      const w = im.width*e, h = im.height*e, m = Math.round(S.W*.033);
+      const pos = {sd:[S.W-w-m, m], si:[m, m], id:[S.W-w-m, S.H-h-m], ii:[m, S.H-h-m]}[S.mosca.esquina];
+      ctx.save(); ctx.globalAlpha = S.mosca.opacidad;
+      ctx.drawImage(im, pos[0], pos[1], w, h); ctx.restore();
+    }
+  }
+}
+
+function dibujarZonas(ctx){
+  if(!S.zonas) return;
+  const z = CFG.zonas; ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.strokeStyle = CFG.colores.qillu;
+  ctx.setLineDash([14,10]); ctx.lineWidth = 3;
+  ctx.font = `600 ${Math.round(S.W*.021)}px "Archivo"`;
+  if(S.H/S.W > 1.6){                       // 9:16 → zonas de TikTok/Stories
+    ctx.fillRect(0,0,S.W,z.story_sup);
+    ctx.fillRect(0,S.H-z.story_inf,S.W,z.story_inf);
+    ctx.fillRect(S.W-z.tiktok_der, z.story_sup, z.tiktok_der, S.H-z.story_sup-z.story_inf);
+    ctx.fillStyle = CFG.colores.qillu;
+    ctx.fillText("zona tapada por la interfaz (TikTok/Stories)", 24, z.story_sup-34);
+    ctx.fillText("botonera →", S.W-z.tiktok_der-150, S.H/2);
+    ctx.strokeRect(z.story_lat, z.story_sup, S.W-2*z.story_lat, S.H-z.story_sup-z.story_inf);
+  }else{
+    const m = z.margen_post;
+    ctx.strokeRect(m, m, S.W-2*m, S.H-2*m);
+    ctx.fillStyle = CFG.colores.qillu;
+    ctx.fillText("margen de seguridad", m+10, m+10);
+  }
+  ctx.restore();
+}
+
+function rectDeCapa(id){
+  if(id === "cintillo" && S.cintillo){
+    const px = Math.round(S.H*.024);
+    const medida = dibujarCintilloMedida();
+    return {x:S.cintillo.x, y:S.cintillo.y, w:medida.w, h:medida.h};
+  }
+  const t = S.textos.find(t=>t.id===id);
+  if(t){ const m = medirTexto(cx, t); return {x:t.x, y:t.y, w:m.w, h:m.h}; }
+  return null;
+}
+function dibujarCintilloMedida(){
+  const c = S.cintillo, px = Math.round(S.H*.024), padH=px, padV=Math.round(px*.5),
+        r=Math.round(px*.3), track=.12;
+  cx.save(); cx.font = `700 ${px}px "Archivo"`;
+  let wTxt=0; for(const ch of c.texto) wTxt += cx.measureText(ch).width + track*px;
+  cx.restore();
+  return {w: padH*2 + r*2 + Math.round(px*.6) + Math.round(wTxt-track*px), h: padV*2+px};
+}
+function dibujarSeleccion(ctx){
+  if(S.sel === "marco" && S.marco.activo){
+    ctx.save(); ctx.strokeStyle = CFG.colores.qillu; ctx.setLineDash([14,10]);
+    ctx.lineWidth = 3; ctx.globalAlpha = .85;
+    ctx.strokeRect(5, 5, S.W-10, S.H-10);            // el marco entero
+    ctx.setLineDash([8,6]); ctx.lineWidth = 2.5;
+    for(const z of MK._zonas)                        // su bloque de firma (arrastrable)
+      ctx.strokeRect(z.x-8, z.y-8, z.w+16, z.h+16);
+    ctx.restore(); return;
+  }
+  const r = (S.sel && S.sel!=="medio" && S.sel!=="marco" && S.sel!=="rotulo" && S.sel!=="mosca")
+            ? rectDeCapa(S.sel) : null;
+  if(!r) return;
+  ctx.save(); ctx.strokeStyle = CFG.colores.qillu; ctx.lineWidth = 2.5;
+  ctx.setLineDash([8,6]); ctx.strokeRect(r.x-8, r.y-8, r.w+16, r.h+16); ctx.restore();
+}
+
+/* ---------------- Interacción con el lienzo ---------------- */
+function posLienzo(ev){
+  const b = cv.getBoundingClientRect();
+  return {x:(ev.clientX-b.left) * S.W/b.width, y:(ev.clientY-b.top) * S.H/b.height};
+}
+let arrastre = null;
+cv.addEventListener("pointerdown", ev=>{
+  const p = posLienzo(ev);
+  // primero las capas de arriba: textos (última dibujada = más arriba), cintillo
+  const candidatos = [...S.textos.map(t=>t.id).reverse(), ...(S.cintillo?["cintillo"]:[])];
+  for(const id of candidatos){
+    const r = rectDeCapa(id);
+    if(r && p.x>=r.x-10 && p.x<=r.x+r.w+10 && p.y>=r.y-10 && p.y<=r.y+r.h+10){
+      S.sel = id;
+      const obj = id==="cintillo" ? S.cintillo : S.textos.find(t=>t.id===id);
+      arrastre = {tipo:"capa", obj, dx:p.x-obj.x, dy:p.y-obj.y};
+      cv.setPointerCapture(ev.pointerId); pintarProps(); pintarCapas(); dibujar();
+      return;
+    }
+  }
+  // el marco: clic sobre cualquier parte pintada lo selecciona; si el clic
+  // cae en su bloque de firma, además se puede ARRASTRAR para moverlo
+  if(S.marco.activo && marcoEnPunto(p.x, p.y)){
+    S.sel = "marco";
+    const z = zonaMarcoEn(p.x, p.y);
+    if(z && z.el === "textos"){
+      arrastre = {tipo:"marcoTexto", px0:p.x, py0:p.y,
+                  dx0:S.marco.textoDX||0, dy0:S.marco.textoDY||0};
+      cv.setPointerCapture(ev.pointerId);
+    }else arrastre = null;
+    pintarProps(); pintarCapas(); dibujar();
+    return;
+  }
+  if(elMedio){ S.sel = "medio";
+    arrastre = {tipo:"medio", px0:p.x, py0:p.y, rec0:{...S.rec}};
+    cv.setPointerCapture(ev.pointerId); pintarProps(); pintarCapas(); dibujar(); }
+});
+/* doble clic sobre el marco = editar su nombre al instante */
+cv.addEventListener("dblclick", ev=>{
+  const p = posLienzo(ev);
+  const candidatos = [...S.textos.map(t=>t.id).reverse(), ...(S.cintillo?["cintillo"]:[])];
+  for(const id of candidatos){
+    const r = rectDeCapa(id);
+    if(r && p.x>=r.x-10 && p.x<=r.x+r.w+10 && p.y>=r.y-10 && p.y<=r.y+r.h+10) return;
+  }
+  if(S.marco.activo && marcoEnPunto(p.x, p.y)){
+    S.sel = "marco"; pintarProps(); pintarCapas(); dibujar();
+    setTimeout(()=>{ const i = $("#mp-nombre"); if(i){ i.focus(); i.select(); } }, 0);
+  }
+});
+cv.addEventListener("pointermove", ev=>{
+  if(!arrastre) return;
+  const p = posLienzo(ev);
+  if(arrastre.tipo === "capa"){
+    arrastre.obj.x = Math.round(p.x - arrastre.dx);
+    arrastre.obj.y = Math.round(p.y - arrastre.dy);
+  }else if(arrastre.tipo === "marcoTexto"){
+    S.marco.textoDX = Math.round(arrastre.dx0 + (p.x - arrastre.px0));
+    S.marco.textoDY = Math.round(arrastre.dy0 + (p.y - arrastre.py0));
+  }else if(arrastre.tipo === "medio"){
+    const fx = S.rec.w / S.W;   // px de origen por px de lienzo
+    S.rec.x = Math.round(arrastre.rec0.x - (p.x-arrastre.px0)*fx);
+    S.rec.y = Math.round(arrastre.rec0.y - (p.y-arrastre.py0)*fx);
+    limitarRec();
+  }
+  dibujar();
+});
+cv.addEventListener("pointerup", ()=>{ if(arrastre){ arrastre=null; Hist.marcar(); } });
+cv.addEventListener("wheel", ev=>{           // rueda = acercar/alejar el MEDIO
+  if(!elMedio) return; ev.preventDefault();
+  const factor = ev.deltaY < 0 ? 0.92 : 1.087;
+  const p = posLienzo(ev);
+  const cxr = S.rec.x + S.rec.w * p.x/S.W, cyr = S.rec.y + S.rec.h * p.y/S.H;
+  S.rec.w = Math.round(S.rec.w*factor); S.rec.h = Math.round(S.rec.w * S.H/S.W);
+  S.rec.x = Math.round(cxr - S.rec.w * p.x/S.W);
+  S.rec.y = Math.round(cyr - S.rec.h * p.y/S.H);
+  limitarRec(); dibujar();
+  clearTimeout(cv._wh); cv._wh = setTimeout(()=>Hist.marcar(), 350);
+}, {passive:false});
+
+/* zoom visual del lienzo */
+function ajustarVista(auto=true){
+  const cont = $("#lienzo-wrap");
+  if(auto){ vista.zoom = clamp(Math.min((cont.clientWidth-48)/S.W, (cont.clientHeight-48)/S.H, 1), .02, 1); }
+  cv.style.width = Math.round(S.W*vista.zoom)+"px";
+  $("#zoom-pct").textContent = Math.round(vista.zoom*100)+"%";
+}
+$("#btn-zoom-in").onclick = ()=>{ vista.zoom = clamp(vista.zoom*1.2, .05, 3); ajustarVista(false); };
+$("#btn-zoom-out").onclick = ()=>{ vista.zoom = clamp(vista.zoom/1.2, .05, 3); ajustarVista(false); };
+$("#btn-zoom-fit").onclick = ()=>ajustarVista(true);
+window.addEventListener("resize", ()=>ajustarVista(true));
+
+/* ---------------- Video: línea de tiempo (MULTICORTE) ----------------
+   El video se maneja como TRAMOS conservados (S.video.segs). ✂ divide el
+   tramo bajo el punto de reproducción; 🗑 lo quita; la vista previa salta
+   los huecos; la exportación une los tramos (ffmpeg concat). */
+function segsV(){
+  if(!S.video.segs || !S.video.segs.length)
+    S.video.segs = [{ini:S.video.ini||0, fin:S.video.fin||S.video.dur||0}];
+  return S.video.segs;
+}
+function segEn(t){
+  const ss = segsV();
+  let i = ss.findIndex(x=>t >= x.ini-0.001 && t <= x.fin+0.001);
+  if(i < 0){ let mejor = 0, d = 1e9;
+    ss.forEach((x,j)=>{ const dd = Math.min(Math.abs(t-x.ini), Math.abs(t-x.fin));
+      if(dd < d){ d = dd; mejor = j; } });
+    i = mejor; }
+  return i;
+}
+function normalizarSegs(){
+  const ss = segsV(); ss.sort((a,b)=>a.ini-b.ini);
+  S.video.ini = ss[0].ini; S.video.fin = ss[ss.length-1].fin;
+}
+function durSegs(){ return segsV().reduce((a,x)=>a+Math.max(0,x.fin-x.ini),0); }
+
+let rafVideo = 0, reproduciendo = false;
+function bucleVideo(){
+  dibujar();
+  if(reproduciendo){
+    const ss = segsV(), t = elMedio.currentTime;
+    if(!ss.some(x=>t >= x.ini - 0.25 && t < x.fin - 0.03)){
+      const sig = ss.find(x=>x.ini > t);
+      if(sig) elMedio.currentTime = sig.ini;          // hueco quitado → saltar
+      else { pausarVideo(); elMedio.currentTime = ss[0].ini; }  // fin del último
+    }
+  }
+  actualizarTimeline();
+  rafVideo = requestAnimationFrame(bucleVideo);
+}
+function iniciarBucle(){ cancelAnimationFrame(rafVideo); if(esVideo()) bucleVideo(); }
+function reproducir(){ if(!esVideo()) return;
+  const _ss = segsV(), _t = elMedio.currentTime;
+  if(!_ss.some(x=>_t >= x.ini && _t < x.fin - 0.05))
+    elMedio.currentTime = _ss[0].ini;
+  elMedio.play(); reproduciendo = true; $("#tl-play").innerHTML = icono("pausa"); }
+function pausarVideo(){ if(!esVideo()) return;
+  elMedio.pause(); reproduciendo = false; $("#tl-play").innerHTML = icono("reproducir"); }
+function detenerVideo(){ if(esVideo()){ pausarVideo(); }
+  cancelAnimationFrame(rafVideo); reproduciendo = false; }
+$("#tl-play").onclick = ()=> reproduciendo ? pausarVideo() : reproducir();
+$("#tl-scrub").oninput = ev=>{ if(!esVideo()) return;
+  pausarVideo(); elMedio.currentTime = ev.target.value * S.video.dur/100; };
+$("#tl-set-ini").onclick = ()=>{ if(!esVideo()) return;
+  const ss = segsV(), i = segEn(elMedio.currentTime), x = ss[i];
+  x.ini = Math.min(elMedio.currentTime, x.fin - 0.2);
+  if(i > 0) x.ini = Math.max(x.ini, ss[i-1].fin + 0.05);
+  normalizarSegs(); actualizarTimeline(true); Hist.marcar(); };
+$("#tl-set-fin").onclick = ()=>{ if(!esVideo()) return;
+  const ss = segsV(), i = segEn(elMedio.currentTime), x = ss[i];
+  x.fin = Math.max(elMedio.currentTime, x.ini + 0.2);
+  if(i < ss.length-1) x.fin = Math.min(x.fin, ss[i+1].ini - 0.05);
+  normalizarSegs(); actualizarTimeline(true); Hist.marcar(); };
+$("#tl-cortar").onclick = ()=>{ if(!esVideo()) return;
+  const ss = segsV(), t = elMedio.currentTime, i = segEn(t), x = ss[i];
+  if(t <= x.ini + 0.2 || t >= x.fin - 0.2){
+    toast("Lleva el punto ▶ al interior del tramo para dividirlo"); return; }
+  ss.splice(i, 1, {ini:x.ini, fin:t}, {ini:t, fin:x.fin});
+  normalizarSegs(); actualizarTimeline(true); Hist.marcar();
+  toast("Tramo dividido ✂ — párate en la parte que sobra y pulsa 🗑"); };
+$("#tl-quitar").onclick = ()=>{ if(!esVideo()) return;
+  const ss = segsV();
+  if(ss.length <= 1){ toast("Es el único tramo: ajústalo con ⟦ y ⟧"); return; }
+  ss.splice(segEn(elMedio.currentTime), 1);
+  normalizarSegs(); actualizarTimeline(true); Hist.marcar();
+  toast("Tramo quitado — la vista previa salta el hueco"); };
+function actualizarTimeline(fuerte=false){
+  if(!esVideo()) return;
+  const d = S.video.dur || 1;
+  if(!$("#tl-scrub").matches(":active"))
+    $("#tl-scrub").value = elMedio.currentTime/d*100;
+  $("#tl-tiempo").textContent = fmtT(elMedio.currentTime)+" / "+fmtT(d);
+  const ss = segsV();
+  $("#tl-io").textContent = ss.length > 1
+    ? ss.length+" tramos · "+fmtT(durSegs())
+    : "⟦ "+fmtT(S.video.ini)+" – "+fmtT(S.video.fin)+" ⟧";
+  const cont = $("#tl-rangos"), barra = $("#tl-barra").clientWidth;
+  const iAct = segEn(elMedio.currentTime);
+  cont.innerHTML = ss.map((x,i)=>
+    `<i style="left:${x.ini/d*barra}px;width:${Math.max(2,(x.fin-x.ini)/d*barra)}px;`
+    +`opacity:${i===iAct?".95":".45"}"></i>`).join("");
+  if(fuerte) dibujar();
+}
+
+/* ---------------- Paneles: banco ---------------- */
+let bancoTab = "fotos";
+let bancoFiltro = "";
+function pintarBanco(){
+  const todo = bancoTab==="fotos" ? BANCO.imagenes : BANCO.videos;
+  const cs = [...new Set(todo.map(it=>it.carpeta||"General"))].sort();
+  const lista = bancoFiltro ? todo.filter(it=>(it.carpeta||"General")===bancoFiltro) : todo;
+  const chip = (v,t)=>`<button class="tagchip${bancoFiltro===v?" on":""}" data-tag="${v}">${esc(t)}</button>`;
+  $("#banco-etiquetas").innerHTML = todo.length
+    ? chip("","Todas") + cs.map(c=>chip(c,c)).join("") : "";
+  // agrupar por SUBCARPETA dentro de la etiqueta, con separadores visuales
+  const subgrupoDe = it=>{ let r=(it.name||"").split(" / ").slice(0,-1);
+    if(bancoFiltro && r[0]===bancoFiltro) r=r.slice(1);
+    return r.join("  ›  ") || (bancoFiltro?"· directas en la etiqueta ·":"General"); };
+  const grupos = new Map();
+  lista.forEach((it,i)=>{ const g=subgrupoDe(it); if(!grupos.has(g))grupos.set(g,[]); grupos.get(g).push({it,i}); });
+  const mini = (it,i)=>`<div class="mini" data-i="${i}" title="${esc(it.name)}${it.credito? "\n"+esc(it.credito):""}">
+      ${bancoTab==="fotos"
+        ? `<img loading="lazy" decoding="async" src="${api("/miniatura/"+it.url.slice(it.url.indexOf("/banco/")+7))}">`
+        : `<video preload="metadata" src="${it.url}#t=0.4"></video><span class="vid">🎬</span>`}</div>`;
+  let html="";
+  const unSolo = grupos.size<=1;
+  for(const [g,items] of grupos){
+    if(!unSolo) html+=`<div class="banco-sep"><span class="sep-linea"></span>`
+      +`<span class="sep-nom">${esc(g)}</span><span class="sep-cnt">${items.length}</span>`
+      +`<span class="sep-linea"></span></div>`;
+    html+=items.map(({it,i})=>mini(it,i)).join("");
+  }
+  $("#banco").innerHTML = html || `<div class="vacio" style="grid-column:1/-1;color:var(--ui-texto2)">
+      (vacío${bancoFiltro?" en «"+esc(bancoFiltro)+"»":" — sube archivos o agrégalos a recursos/"})</div>`;
+  $$("#banco-etiquetas [data-tag]").forEach(t=>t.onclick = ()=>{ bancoFiltro=t.dataset.tag; pintarBanco(); });
+  $$("#banco .mini").forEach(el=>el.onclick = ()=>{
+    const it = lista[+el.dataset.i];
+    usarMedio(it.url, bancoTab==="fotos" ? "foto":"video", it.name);
+    if(it.credito) toast("Crédito: "+it.credito, 4000);
+  });
+}
+$("#tab-fotos").onclick = ()=>{ bancoTab="fotos"; $("#tab-fotos").classList.add("on");
+  $("#tab-videos").classList.remove("on"); pintarBanco(); };
+$("#tab-videos").onclick = ()=>{ bancoTab="videos"; $("#tab-videos").classList.add("on");
+  $("#tab-fotos").classList.remove("on"); pintarBanco(); };
+$("#tab-refrescar").onclick = ()=>{ cargarBanco(); toast("Banco actualizado"); };
+$("#btn-subir").onclick = ()=>$("#inp-archivo").click();
+$("#inp-archivo").onchange = ev=>{ const f=ev.target.files[0]; if(f) subirArchivo(f); ev.target.value=""; };
+
+/* ---------------- Paneles: formato ---------------- */
+function pintarFormatos(){
+  const nombres = {cuadrada_1080x1080:"Cuadrado 1:1", vertical_1080x1350:"Vertical 4:5",
+    horizontal_1440x1080:"Horizontal 4:3", horizontal_1920x1080:"Panorámico 16:9",
+    facebook_1200x630:"Facebook enlace", estado_1080x1920:"Estados · 9:16"};
+  $("#formatos").innerHTML = Object.entries(CFG.formatos_foto).map(([k,f])=>{
+    const inhab = esVideo() && !FORMATOS_VIDEO_OK.includes(k);
+    return `<button class="fmt ${k===S.formato?"on":""}" data-f="${k}" ${inhab?"disabled":""}>
+      <b>${nombres[k]||k}</b><span>${f.px[0]}×${f.px[1]}</span></button>`;
+  }).join("");
+  $$("#formatos .fmt").forEach(b=>b.onclick = ()=>{ aplicarFormato(b.dataset.f); Hist.marcar(); });
+}
+
+/* ---------------- Paneles: componentes ---------------- */
+function pintarComponentes(){
+  const esV = esVideo();
+  if(!esV){
+    $("#componentes").innerHTML = `<div class="vacio" style="color:var(--ui-texto2);font-size:12px">
+      El diseño de fotos (marcos, textos, cintillos) migró al
+      <a class="enlace" href="editor.html">editor de Publicaciones 🎨</a>, donde cada
+      pieza del marco es una capa editable. Aquí se revela la foto: luz, color y encuadre.</div>`;
+    return;
+  }
+  const kickers = CFG.textos.kickers_rotulo || [];
+  $("#componentes").innerHTML = `
+    <div class="comp ${S.marco.activo?"on":""}" id="c-marco">
+      <div class="cab"><input type="checkbox" ${S.marco.activo?"checked":""} id="c-marco-ck">
+        <b>${esV?"Banda institucional":"Marco institucional"}</b></div>
+      <div class="cuerpo"><div class="fila"><label>Estilo</label>
+        <select id="c-marco-modo">${(()=>{
+          const disp = modosMarco();
+          if(disp.length && !disp.includes(S.marco.modo)) S.marco.modo = disp[0];
+          return disp.map(m=>`<option value="${m}" ${m===S.marco.modo?"selected":""}>
+            ${esc(MARCOS[m].nombre)}</option>`).join("");
+        })()}</select></div>
+        <button class="p-btn" id="c-marco-edit">✎ Editar este marco (textos, colores, elementos)</button>
+        <div style="font-size:11.5px;color:var(--ui-texto2)">Todo es editable:
+        nombre y cargo, colores por rol, tamaño, logo, monograma…</div></div>
+    </div>
+    ${esV ? `
+    <div class="comp ${S.rotulo.activo?"on":""}" id="c-rotulo">
+      <div class="cab"><input type="checkbox" ${S.rotulo.activo?"checked":""} id="c-rotulo-ck">
+        <b>Rótulo del titular</b></div>
+      <div class="cuerpo"><div class="fila"><label>Contexto</label>
+        <select id="c-rotulo-k">${kickers.map(k=>
+          `<option ${k===S.rotulo.kicker?"selected":""}>${esc(k)}</option>`).join("")}
+          <option value="" ${!S.rotulo.kicker?"selected":""}>(sin kicker)</option>
+        </select></div>
+        <div style="font-size:11.5px;color:var(--ui-texto2)">En 9:16 se coloca en la
+        zona segura de TikTok/Reels automáticamente.</div></div>
+    </div>`:""}
+    <div class="comp ${S.mosca.activo?"on":""}" id="c-mosca">
+      <div class="cab"><input type="checkbox" ${S.mosca.activo?"checked":""} id="c-mosca-ck">
+        <b>Mosca · lema (marca de agua)</b></div>
+      <div class="cuerpo">
+        <div class="fila"><label>Esquina</label><select id="c-mosca-esq">
+          <option value="sd" ${S.mosca.esquina==="sd"?"selected":""}>Superior derecha</option>
+          <option value="si" ${S.mosca.esquina==="si"?"selected":""}>Superior izquierda</option>
+          <option value="id" ${S.mosca.esquina==="id"?"selected":""}>Inferior derecha</option>
+          <option value="ii" ${S.mosca.esquina==="ii"?"selected":""}>Inferior izquierda</option>
+        </select></div>
+        <div class="fila"><label>Tamaño</label>
+          <input type="range" id="c-mosca-e" min="0.3" max="1.1" step="0.02" value="${S.mosca.escala}"></div>
+      </div>
+    </div>
+    <div class="comp ${S.cintillo?"on":""}" id="c-cint">
+      <div class="cab"><input type="checkbox" ${S.cintillo?"checked":""} id="c-cint-ck">
+        <b>Cintillo de contexto</b></div>
+      <div class="cuerpo"><div class="fila">
+        <input type="text" id="c-cint-txt" placeholder="REUNIÓN DE TRABAJO · LUGAR"
+          value="${esc(S.cintillo?.texto||"")}"></div></div>
+    </div>`;
+
+  const cambiar = (fn)=>{ fn(); pintarComponentes(); dibujar(); Hist.marcar(); };
+  $("#c-marco-ck").onchange = e=>cambiar(()=>S.marco.activo = e.target.checked);
+  $("#c-marco-modo").onchange = e=>cambiar(()=>{ S.marco.modo = e.target.value;
+    if(S.sel === "marco") pintarProps(); });
+  $("#c-marco-edit").onclick = ()=>{ S.marco.activo = true; S.sel = "marco";
+    pintarProps(); pintarCapas(); dibujar(); };
+  if(esV){
+    $("#c-rotulo-ck").onchange = e=>cambiar(()=>S.rotulo.activo = e.target.checked);
+    $("#c-rotulo-k").onchange = e=>cambiar(()=>S.rotulo.kicker = e.target.value);
+  }
+  $("#c-mosca-ck").onchange = e=>cambiar(()=>S.mosca.activo = e.target.checked);
+  $("#c-mosca-esq").onchange = e=>cambiar(()=>S.mosca.esquina = e.target.value);
+  $("#c-mosca-e").oninput = e=>{ S.mosca.escala = +e.target.value; dibujar(); };
+  $("#c-mosca-e").onchange = ()=>Hist.marcar();
+  $("#c-cint-ck").onchange = e=>cambiar(()=>{
+    S.cintillo = e.target.checked
+      ? {texto:($("#c-cint-txt").value||"REUNIÓN DE TRABAJO").toUpperCase(),
+         x:Math.round(S.W*.045), y:Math.round(S.H*.045)}
+      : null;
+    if(S.cintillo) S.sel = "cintillo";
+  });
+  $("#c-cint-txt").onchange = e=>cambiar(()=>{
+    if(S.cintillo) S.cintillo.texto = e.target.value.toUpperCase(); });
+}
+
+/* ---------------- Paneles: textos ---------------- */
+function nuevoTexto(tipo){
+  const c = CFG.colores;
+  const base = {id:"t"+(idSec++), tracking:0, sombra:true, opacidad:1,
+                x:Math.round(S.W*.07), y:Math.round(S.H*.12)};
+  const t = tipo==="titulo"
+    ? {...base, texto:"REUNIÓN CON DOCENTES\nDE {{region}}", familia:"Archivo", peso:900,
+       px:Math.round(S.W*.062), color:c.papel}
+    : tipo==="dato"
+    ? {...base, texto:"{{sede}} · 12 de agosto de 2026", familia:"Source Sans 3", peso:600,
+       px:Math.round(S.W*.031), color:c.papel, y:Math.round(S.H*.055)}
+    : {...base, texto:"Texto", familia:"Source Sans 3", peso:400,
+       px:Math.round(S.W*.035), color:c.blanco};
+  t.texto = rellenar(t.texto);
+  S.textos.push(t); S.sel = t.id;
+  pintarProps(); pintarCapas(); dibujar(); Hist.marcar();
+}
+$$("#izq [data-txt]").forEach(b=>b.onclick = ()=>nuevoTexto(b.dataset.txt));
+
+/* ---------------- Panel derecho: propiedades ---------------- */
+function pintarProps(){
+  const d = $("#props"), c = CFG.colores;
+  if(S.sel === "medio" && S.medio){
+    const pct = Math.round(100 * (S.medio.nat.w / S.rec.w) * (S.W/S.medio.nat.w));
+    d.innerHTML = `
+      <div class="fila"><label>Archivo</label><span style="font-size:12px">${esc(S.medio.nombre||"")}</span></div>
+      <div class="fila"><label>Zoom</label>
+        <input type="range" id="pr-zoom" min="100" max="400" value="${clamp(pct,100,400)}"></div>
+      <div class="fila"><label></label><span style="font-size:11.5px;color:var(--ui-texto2)">
+        Arrastra la imagen para encuadrar · rueda del ratón = zoom</span></div>
+      <button class="p-btn" id="pr-centrar">Centrar / rellenar de nuevo</button>`;
+    $("#pr-zoom").oninput = e=>{
+      const fz = e.target.value/100;                    // 1 = cover exacto
+      const cov = recCubrir(), cxr = S.rec.x+S.rec.w/2, cyr = S.rec.y+S.rec.h/2;
+      S.rec.w = Math.round(cov.w/fz); S.rec.h = Math.round(cov.h/fz);
+      S.rec.x = Math.round(cxr-S.rec.w/2); S.rec.y = Math.round(cyr-S.rec.h/2);
+      limitarRec(); dibujar();
+    };
+    $("#pr-zoom").onchange = ()=>Hist.marcar();
+    $("#pr-centrar").onclick = ()=>{ S.rec = recCubrir(); dibujar(); Hist.marcar(); };
+    return;
+  }
+  if(S.sel === "cintillo" && S.cintillo){
+    d.innerHTML = `
+      <div class="fila"><label>Texto</label>
+        <input type="text" id="pr-ctxt" value="${esc(S.cintillo.texto)}"></div>
+      <div class="fila"><label>Posición</label>
+        <input type="number" id="pr-cx" value="${S.cintillo.x}" style="width:70px">
+        <input type="number" id="pr-cy" value="${S.cintillo.y}" style="width:70px"></div>
+      <button class="p-btn" id="pr-cdel">✕ Quitar cintillo</button>`;
+    $("#pr-ctxt").oninput = e=>{ S.cintillo.texto = e.target.value.toUpperCase(); dibujar(); };
+    $("#pr-ctxt").onchange = ()=>{ pintarComponentes(); Hist.marcar(); };
+    $("#pr-cx").onchange = e=>{ S.cintillo.x = +e.target.value; dibujar(); Hist.marcar(); };
+    $("#pr-cy").onchange = e=>{ S.cintillo.y = +e.target.value; dibujar(); Hist.marcar(); };
+    $("#pr-cdel").onclick = ()=>{ S.cintillo=null; S.sel=null;
+      pintarComponentes(); pintarProps(); pintarCapas(); dibujar(); Hist.marcar(); };
+    return;
+  }
+  if(S.sel === "marco" && S.marco.activo){
+    const def = MARCOS[S.marco.modo] || MARCOS.tinta;
+    const M = S.marco; if(!M.colores) M.colores = {};
+    const ctrl = def.controles || [];
+    const FLAGS = {recorte:"Recorte del titular", logo:"Logo institucional",
+                   monograma:"Monograma", filete:"Filete exterior",
+                   faja:"Faja de rombos", obelisco:"Obelisco", pastilla:"Pastilla de firma"};
+    const paleta = [["Papel",c.papel],["Blanco",c.blanco],["Tinta",c.tinta],
+                    ["Puka",c.puka],["Q'illu",c.qillu],["Vino",c.vino],
+                    ["Q'illu claro",c.qillu300],["Granate",c.puka700],["Neutro",c.neutral300]]
+                   .filter(p=>p[1]);
+    const html = [];
+    html.push(`<div class="fila"><label>Estilo</label><select id="mp-modo">${
+      modosMarco().map(m=>`<option value="${m}" ${m===M.modo?"selected":""}>${esc(MARCOS[m].nombre)}</option>`).join("")}</select></div>`);
+    if(ctrl.includes("textos")){
+      html.push(`<div class="fila"><label>Nombre</label><input type="text" id="mp-nombre"
+        placeholder="${esc(CFG.textos.nombre||"")}" value="${esc(M.nombre||"")}"></div>`);
+      html.push(`<div class="fila"><label>Cargo</label><input type="text" id="mp-rol"
+        placeholder="${esc(CFG.textos.rol||"")}" value="${esc(M.rol||"")}"></div>`);
+    }
+    if(ctrl.includes("escala")) html.push(`<div class="fila"><label>Tamaño</label>
+      <input type="range" id="mp-escala" min="0.6" max="1.6" step="0.05" value="${M.escala??1}"></div>`);
+    if(ctrl.includes("opacidad")) html.push(`<div class="fila"><label>Opacidad</label>
+      <input type="range" id="mp-op" min="0.2" max="1" step="0.05" value="${M.opacidad??1}"></div>`);
+    if(ctrl.includes("intensidad")) html.push(`<div class="fila"><label>Intensidad</label>
+      <input type="range" id="mp-int" min="0.4" max="1.4" step="0.05" value="${M.intensidad??1}"></div>`);
+    if(ctrl.includes("textos")) html.push(`<div class="fila"><label>Mover firma</label>
+      <input type="number" id="mp-tdx" value="${M.textoDX||0}" style="width:64px" title="Desplazamiento horizontal">
+      <input type="number" id="mp-tdy" value="${M.textoDY||0}" style="width:64px" title="Desplazamiento vertical">
+      <button class="tl-btn" id="mp-tcentrar" title="Volver a la posición original">↺</button></div>
+      <div style="font-size:11px;color:var(--ui-texto2);margin:0 0 6px">💡 En el lienzo:
+      un clic sobre el marco lo selecciona · <b>arrastra su firma</b> para moverla
+      (o flechas del teclado) · doble clic = editar el nombre.</div>`);
+    for(const f of Object.keys(FLAGS)) if(ctrl.includes(f))
+      html.push(`<div class="fila"><label>${FLAGS[f]}</label>
+        <input type="checkbox" data-mflag="${f}" ${(M[f]??MARCO_DEFAULTS[f])?"checked":""}></div>`);
+    if(ctrl.includes("colores")){
+      html.push(`<div style="font:700 11px Archivo;letter-spacing:.12em;color:var(--ui-texto2);text-transform:uppercase;margin:10px 0 4px">Colores del estilo</div>`);
+      for(const [rol, base] of Object.entries(def.roles||{})){
+        const actual = M.colores[rol];
+        html.push(`<div class="fila"><label style="font-size:11.5px">${esc(rol)}</label>
+          <div class="muestras-color" data-mrol="${esc(rol)}">
+            <div class="sw ${!actual?"on":""}" data-c="" title="Automático (${esc(base)})"
+                 style="background:${c[base]||"#888"};box-shadow:inset 0 0 0 3px var(--ui-panel)"></div>
+            ${paleta.map(([n,hx])=>`<div class="sw ${hx===actual?"on":""}" title="${esc(n)}"
+                 data-c="${hx}" style="background:${hx}"></div>`).join("")}
+          </div></div>`);
+      }
+      html.push(`<div style="font-size:11px;color:var(--ui-texto2);margin:2px 0 6px">
+        El primer cuadro de cada fila = color automático del estilo.</div>`);
+    }
+    html.push(`<button class="p-btn" id="mp-reset">↺ Restablecer este estilo</button>`);
+    html.push(`<button class="p-btn" id="mp-quitar">✕ Quitar marco</button>`);
+    d.innerHTML = html.join("");
+    $("#mp-modo").onchange = e=>{ M.modo = e.target.value;
+      pintarComponentes(); pintarProps(); pintarCapas(); dibujar(); Hist.marcar(); };
+    const inpN = $("#mp-nombre"), inpR = $("#mp-rol");
+    if(inpN){ inpN.oninput = e=>{ M.nombre = e.target.value; dibujar(); };
+              inpN.onchange = ()=>Hist.marcar(); }
+    if(inpR){ inpR.oninput = e=>{ M.rol = e.target.value; dibujar(); };
+              inpR.onchange = ()=>Hist.marcar(); }
+    const rango = (id, clave)=>{ const el = $(id); if(!el) return;
+      el.oninput = e=>{ M[clave] = +e.target.value; dibujar(); };
+      el.onchange = ()=>Hist.marcar(); };
+    rango("#mp-escala","escala"); rango("#mp-op","opacidad"); rango("#mp-int","intensidad");
+    const num = (id, clave)=>{ const el = $(id); if(!el) return;
+      el.onchange = e=>{ M[clave] = Math.round(+e.target.value)||0; dibujar(); Hist.marcar(); }; };
+    num("#mp-tdx","textoDX"); num("#mp-tdy","textoDY");
+    const tc = $("#mp-tcentrar");
+    if(tc) tc.onclick = ()=>{ M.textoDX = 0; M.textoDY = 0;
+      pintarProps(); dibujar(); Hist.marcar(); };
+    $$("#props [data-mflag]").forEach(el=>el.onchange = e=>{
+      M[el.dataset.mflag] = e.target.checked; dibujar(); Hist.marcar(); });
+    $$("#props [data-mrol] .sw").forEach(sw=>sw.onclick = ()=>{
+      const rol = sw.parentElement.dataset.mrol;
+      if(sw.dataset.c) M.colores[rol] = sw.dataset.c; else delete M.colores[rol];
+      pintarProps(); dibujar(); Hist.marcar(); });
+    $("#mp-reset").onclick = ()=>{ Object.assign(M, MARCO_DEFAULTS, {colores:{}});
+      pintarProps(); dibujar(); Hist.marcar(); };
+    $("#mp-quitar").onclick = ()=>{ M.activo = false; S.sel = null;
+      pintarComponentes(); pintarProps(); pintarCapas(); dibujar(); Hist.marcar(); };
+    return;
+  }
+  const t = S.textos.find(t=>t.id===S.sel);
+  if(t){
+    const colores = [["Papel",c.papel],["Blanco",c.blanco],["Tinta",c.tinta],
+                     ["Puka",c.puka],["Q'illu",c.qillu],["Vino",c.vino]];
+    d.innerHTML = `
+      <div class="fila"><textarea id="pr-txt" rows="3">${esc(t.texto)}</textarea></div>
+      <div class="fila"><label>Fuente</label><select id="pr-fam">
+        <option ${t.familia==="Archivo"?"selected":""}>Archivo</option>
+        <option ${t.familia==="Source Sans 3"?"selected":""}>Source Sans 3</option></select>
+        <select id="pr-peso">${[400,600,700,800,900].map(p=>
+          `<option ${p===t.peso?"selected":""}>${p}</option>`).join("")}</select></div>
+      <div class="fila"><label>Tamaño</label>
+        <input type="range" id="pr-px" min="14" max="${Math.round(S.W*.18)}" value="${t.px}">
+        <span id="pr-pxv" style="min-width:34px;font-size:12px">${t.px}</span></div>
+      <div class="fila"><label>Color</label><div class="muestras-color">${colores.map(([n,hx])=>
+        `<div class="sw ${hx===t.color?"on":""}" title="${n}" data-c="${hx}"
+              style="background:${hx}"></div>`).join("")}</div></div>
+      <div class="fila"><label>Espaciado</label>
+        <input type="range" id="pr-track" min="0" max="0.3" step="0.01" value="${t.tracking}"></div>
+      <div class="fila"><label>Opacidad</label>
+        <input type="range" id="pr-op" min="0.15" max="1" step="0.05" value="${t.opacidad}"></div>
+      <div class="fila"><label>Sombra</label>
+        <input type="checkbox" id="pr-som" ${t.sombra?"checked":""}>
+        <span style="font-size:11.5px;color:var(--ui-texto2)">legibilidad sobre foto</span></div>
+      <div class="fila"><label>Posición</label>
+        <input type="number" id="pr-x" value="${t.x}" style="width:70px">
+        <input type="number" id="pr-y" value="${t.y}" style="width:70px"></div>
+      <button class="p-btn" id="pr-del">🗑 Eliminar texto</button>`;
+    const up = fn=>{ fn(); dibujar(); };
+    $("#pr-txt").oninput = e=>up(()=>t.texto = e.target.value);
+    $("#pr-txt").onchange = ()=>Hist.marcar();
+    $("#pr-fam").onchange = e=>{ t.familia = e.target.value; dibujar(); Hist.marcar(); };
+    $("#pr-peso").onchange = e=>{ t.peso = +e.target.value; dibujar(); Hist.marcar(); };
+    $("#pr-px").oninput = e=>{ t.px = +e.target.value; $("#pr-pxv").textContent = t.px; dibujar(); };
+    $("#pr-px").onchange = ()=>Hist.marcar();
+    $$("#props .sw").forEach(s=>s.onclick = ()=>{ t.color = s.dataset.c;
+      pintarProps(); dibujar(); Hist.marcar(); });
+    $("#pr-track").oninput = e=>up(()=>t.tracking = +e.target.value);
+    $("#pr-track").onchange = ()=>Hist.marcar();
+    $("#pr-op").oninput = e=>up(()=>t.opacidad = +e.target.value);
+    $("#pr-op").onchange = ()=>Hist.marcar();
+    $("#pr-som").onchange = e=>{ t.sombra = e.target.checked; dibujar(); Hist.marcar(); };
+    $("#pr-x").onchange = e=>{ t.x = +e.target.value; dibujar(); Hist.marcar(); };
+    $("#pr-y").onchange = e=>{ t.y = +e.target.value; dibujar(); Hist.marcar(); };
+    $("#pr-del").onclick = ()=>{ S.textos = S.textos.filter(x=>x.id!==t.id); S.sel=null;
+      pintarProps(); pintarCapas(); dibujar(); Hist.marcar(); };
+    return;
+  }
+  d.innerHTML = `<div class="vacio">Selecciona la foto/video (clic en el lienzo) o una capa.</div>`;
+}
+
+/* ---------------- Panel derecho: capas ---------------- */
+function pintarCapas(){
+  const filas = [];
+  if(S.mosca.activo) filas.push({id:"mosca", nom:"Mosca · lema", fija:true});
+  if(S.rotulo.activo && esVideo()) filas.push({id:"rotulo", nom:"Rótulo · "+(S.rotulo.kicker||"sin kicker"), fija:true});
+  [...S.textos].reverse().forEach(t=>filas.push({id:t.id, nom:"Texto: "+t.texto.split("\n")[0].slice(0,22)}));
+  if(S.cintillo) filas.push({id:"cintillo", nom:"Cintillo: "+S.cintillo.texto.slice(0,22)});
+  if(S.marco.activo) filas.push({id:"marco", nom:(esVideo()?"Banda":"Marco")+" · "+S.marco.modo, fija:true});
+  if(S.medio) filas.push({id:"medio", nom:(esVideo()?"🎬 ":"🖼 ")+(S.medio.nombre||"medio"), fija:true});
+  $("#capas").innerHTML = filas.map(f=>`
+    <div class="capa ${S.sel===f.id?"on":""}" data-id="${f.id}">
+      <span class="nom">${esc(f.nom)}</span>
+      ${!f.fija ? `<button data-a="sube" title="Subir">▲</button>
+                   <button data-a="baja" title="Bajar">▼</button>
+                   <button data-a="borra" title="Eliminar">✕</button>` : ""}
+    </div>`).join("") || `<div class="vacio" style="color:var(--ui-texto2);font-size:12px">
+      (sin capas aún)</div>`;
+  $$("#capas .capa").forEach(el=>{
+    el.onclick = ev=>{
+      const a = ev.target.dataset?.a, id = el.dataset.id;
+      const i = S.textos.findIndex(t=>t.id===id);
+      if(a==="borra"){ if(i>=0) S.textos.splice(i,1); if(S.sel===id) S.sel=null; }
+      else if(a==="sube" && i>=0 && i<S.textos.length-1)
+        [S.textos[i],S.textos[i+1]]=[S.textos[i+1],S.textos[i]];
+      else if(a==="baja" && i>0)
+        [S.textos[i],S.textos[i-1]]=[S.textos[i-1],S.textos[i]];
+      else S.sel = id;
+      pintarProps(); pintarCapas(); dibujar(); if(a) Hist.marcar();
+    };
+  });
+}
+
+/* ---------------- Presets (plantillas como componentes) ----------------
+   Cada preset compone el estado S (marco/rótulo/mosca/cintillo/textos) SIN tocar
+   la foto/video cargados: aplicar una plantilla NO borra tu imagen, y cargar otra
+   imagen NO borra la plantilla → puedes reemplazar la foto manteniendo el diseño.
+   Los colores salen de los tokens (CFG.colores); los kickers, del design system. */
+/* Marcadores {{titular}}, {{cargo}}, {{region}}, {{sede}}, {{lugar}}… de los textos de ejemplo: los llena el perfil
+   (/api/design → marca.textos); sin perfil, textos neutros. El repo no conoce a ningún cliente. */
+const TEXTOS_NEUTROS = {titular:"Nombre Apellido", cargo:"Cargo o circunscripción", organizacion:"Nombre del despacho",
+  region:"Región", sede:"Ciudad", lugar:"Lugar del evento", lema:"Lema del despacho", institucion:"Institución",
+  entidad:"Entidad u organismo", correo:"correo@institucion.gob", web:"www.institucion.gob"};
+function rellenar(texto){
+  const t = Object.assign({}, TEXTOS_NEUTROS, ((CFG||{}).marca||{}).textos || {});
+  return String(texto ?? "").replace(/\{\{(\w+)\}\}/g, (m, k) => t[k] ?? m);
+}
+function mkTexto(props){
+  const c = CFG.colores;
+  const t = {id:"t"+(idSec++), familia:"Source Sans 3", peso:400, tracking:0, sombra:true,
+          opacidad:1, px:Math.round(S.W*.035), color:c.papel,
+          x:Math.round(S.W*.07), y:Math.round(S.H*.10), ...props};
+  t.texto = rellenar(t.texto);
+  return t;
+}
+const cintilloEn = (texto)=>({texto:rellenar(texto), x:Math.round(S.W*.045), y:Math.round(S.H*.045)});
+const PRESETS = [
+  {sep:"Fotografía"},
+  {ic:"📷", nom:"Foto de actividad", des:"marco con franja de firma (tinta)",
+   ap(){ S.marco={activo:true,modo:"tinta"}; }},
+  {ic:"🤍", nom:"Foto · marco claro", des:"banda blanca con borde puka",
+   ap(){ S.marco={activo:true,modo:"claro"}; }},
+  {ic:"🏛", nom:"Foto · logos oficiales", des:"franja blanca: logo institucional + monograma",
+   ap(){ S.marco={activo:true,modo:"institucional"}; }},
+  {ic:"🧶", nom:"Foto · chumpi andino", des:"faja tejida q'illu/vino + firma",
+   ap(){ S.marco={activo:true,modo:"chumpi"}; }},
+  {ic:"🌅", nom:"Foto · degradado", des:"veladura suave, sin banda dura",
+   ap(){ S.marco={activo:true,modo:"degradado"}; }},
+  {ic:"🏷", nom:"Foto con cintillo", des:"marco + contexto arriba",
+   ap(){ S.marco={activo:true,modo:"tinta"};
+         S.cintillo=cintilloEn("REUNIÓN DE TRABAJO · {{region}}"); }},
+  {ic:"📰", nom:"Publicación con título", des:"marco + titular y fecha",
+   ap(){ S.marco={activo:true,modo:"tinta"}; const c=CFG.colores;
+         S.textos=[ mkTexto({texto:"REUNIÓN CON DOCENTES\nDE {{region}}", familia:"Archivo",
+                      peso:900, px:Math.round(S.W*.062), color:c.papel, y:Math.round(S.H*.60)}),
+                    mkTexto({texto:"{{sede}} · 12 de agosto de 2026", peso:600,
+                      px:Math.round(S.W*.031), color:c.qillu,
+                      y:Math.round(S.H*.60)-Math.round(S.W*.05)}) ]; }},
+  {ic:"💬", nom:"Cita / frase", des:"frase destacada + autoría",
+   ap(){ S.marco={activo:true,modo:"tinta"}; S.cintillo=null; const c=CFG.colores;
+         S.textos=[ mkTexto({texto:"“Lema del\ndespacho.”", familia:"Archivo",
+                      peso:900, px:Math.round(S.W*.078), color:c.papel, y:Math.round(S.H*.30)}),
+                    mkTexto({texto:"{{titular}} · {{cargo}}", peso:600,
+                      px:Math.round(S.W*.028), color:c.qillu, y:Math.round(S.H*.66)}) ]; }},
+  {ic:"🗓", nom:"Efeméride", des:"fecha conmemorativa + mensaje",
+   ap(){ S.marco={activo:true,modo:"tinta"}; const c=CFG.colores;
+         S.cintillo=cintilloEn("FECHA · EFEMÉRIDE DE {{region}}");
+         S.textos=[ mkTexto({texto:"ANIVERSARIO\nDE {{region}}", familia:"Archivo",
+                      peso:900, px:Math.round(S.W*.06), color:c.papel, y:Math.round(S.H*.62)}) ]; }},
+  {ic:"📣", nom:"Convocatoria / invitación", des:"evento: título, fecha y lugar",
+   ap(){ S.marco={activo:true,modo:"tinta"}; const c=CFG.colores;
+         S.cintillo=cintilloEn("CONVOCATORIA");
+         S.textos=[ mkTexto({texto:"AUDIENCIA PÚBLICA\nDESCENTRALIZADA", familia:"Archivo",
+                      peso:900, px:Math.round(S.W*.058), color:c.papel, y:Math.round(S.H*.55)}),
+                    mkTexto({texto:"Sábado 30 de agosto · 9:00 a. m.\n{{lugar}}",
+                      peso:600, px:Math.round(S.W*.03), color:c.qillu, y:Math.round(S.H*.78)}) ]; }},
+  {ic:"📊", nom:"El Dato / cifra", des:"número destacado + detalle",
+   ap(){ S.marco={activo:true,modo:"tinta"}; const c=CFG.colores;
+         S.cintillo=cintilloEn("EL DATO");
+         S.textos=[ mkTexto({texto:"S/ 45 M", familia:"Archivo", peso:900,
+                      px:Math.round(S.W*.20), color:c.qillu, y:Math.round(S.H*.42)}),
+                    mkTexto({texto:"para reactivar la agricultura\nfamiliar en {{region}}",
+                      familia:"Archivo", peso:700, px:Math.round(S.W*.04), color:c.papel,
+                      y:Math.round(S.H*.70)}) ]; }},
+  {ic:"📎", nom:"Comunicado", des:"cintillo + cuerpo de texto",
+   ap(){ S.marco={activo:true,modo:"tinta"}; const c=CFG.colores;
+         S.cintillo=cintilloEn("COMUNICADO");
+         S.textos=[ mkTexto({texto:"Ante los hechos de público conocimiento,\nel despacho informa a la ciudadanía\nlo siguiente:",
+                      peso:600, px:Math.round(S.W*.034), color:c.papel, sombra:true,
+                      y:Math.round(S.H*.58)}) ]; }},
+  {ic:"🙏", nom:"Saludo institucional", des:"marco claro + título centrado",
+   ap(){ S.marco={activo:true,modo:"claro"}; const c=CFG.colores; S.cintillo=null;
+         S.textos=[ mkTexto({texto:"¡FELIZ DÍA DEL\nMAESTRO!", familia:"Archivo", peso:900,
+                      px:Math.round(S.W*.07), color:c.tinta, sombra:false,
+                      x:Math.round(S.W*.08), y:Math.round(S.H*.12)}) ]; }},
+  {ic:"📲", nom:"Estado / historia", des:"9:16 con marco (WhatsApp/FB)",
+   ap(){ aplicarFormato("estado_1080x1920"); S.marco={activo:true,modo:"tinta"}; }},
+
+  {sep:"Video"},
+  {ic:"🔴", nom:"Video · EN VIVO", des:"rótulo EN VIVO + mosca",
+   video:true, ap(){ S.rotulo={activo:true,kicker:"EN VIVO"};
+         S.mosca={...S.mosca,activo:true}; S.marco.activo=false; }},
+  {ic:"🎬", nom:"Video · banda", des:"banda institucional + mosca",
+   video:true, ap(){ S.marco={activo:true,modo:"tinta"};
+         S.mosca={...S.mosca,activo:true}; S.rotulo.activo=false; }},
+  {ic:"🏛", nom:"Video · Sesión de comisión", des:"rótulo de comisión + mosca",
+   video:true, ap(){ S.rotulo={activo:true,kicker:"SESIÓN DE COMISIÓN"};
+         S.mosca={...S.mosca,activo:true}; S.marco.activo=false; }},
+  {ic:"🎙", nom:"Video · Audiencia pública", des:"banda + rótulo de audiencia",
+   video:true, ap(){ S.marco={activo:true,modo:"tinta"};
+         S.rotulo={activo:true,kicker:"AUDIENCIA PÚBLICA"}; S.mosca={...S.mosca,activo:true}; }},
+  {ic:"🌄", nom:"Video · Visita de campo", des:"rótulo de campo + mosca",
+   video:true, ap(){ S.rotulo={activo:true,kicker:"VISITA DE CAMPO"};
+         S.mosca={...S.mosca,activo:true}; S.marco.activo=false; }},
+  {ic:"🎵", nom:"TikTok / Reels", des:"9:16, rótulo en zona segura",
+   video:true, ap(){ aplicarFormato("estado_1080x1920");
+         S.rotulo={activo:true,kicker:"SESIÓN PARLAMENTARIA"}; S.marco.activo=false; }},
+
+  {sep:"Utilidad"},
+  {ic:"⬜", nom:"Limpiar", des:"quitar todos los componentes",
+   ap(){ S.marco.activo=false; S.rotulo.activo=false; S.mosca.activo=false;
+         S.cintillo=null; S.textos=[]; }},
+];
+function pintarPresets(){
+  if(!$("#presets")) return;
+  $("#presets").innerHTML = PRESETS.map((p,i)=>{
+    if(p.sep) return `<div class="sub-tit">${esc(p.sep)}</div>`;
+    const dim = p.video && !esVideo();
+    return `<button class="p-btn preset" data-i="${i}" ${dim?'style="opacity:.5"':""}
+        title="${dim?'Carga primero un video':'Aplicar (mantiene la foto/video cargados)'}">
+      <span class="ic">${p.ic}</span><span class="txt"><b>${esc(p.nom)}</b><span>${esc(p.des)}</span></span>
+    </button>`;
+  }).join("");
+  $$("#presets .preset").forEach(b=>b.onclick = ()=>{
+    const p = PRESETS[+b.dataset.i];
+    if(p.video && !esVideo()){ toast("Esta plantilla es para video: carga primero un video"); return; }
+    p.ap(); pintarTodo(); Hist.marcar();
+  });
+  pintarMisPlantillas();
+}
+
+/* ---------------- Mis plantillas (guardadas por el usuario) ----------------
+   Una "plantilla" es la COMPOSICIÓN actual (formato + marco/rótulo/mosca/cintillo
+   + textos) SIN la foto/video: se reutiliza con cualquier imagen. Se guardan en
+   este navegador (localStorage), igual que en el editor de publicaciones. */
+const LS_TPLS = "identidad_media_tpls_v1", LS_DEF = "identidad_media_default_v1";
+
+/* Persistencia DURABLE (mismo criterio que el editor de publicaciones): la FUENTE
+   DE VERDAD es el servidor (/api/almacen → archivos en disco); localStorage es solo
+   un espejo. Así las plantillas y la predeterminada del editor de medios sobreviven
+   a cerrar el navegador, limpiar su caché e incluso pasar a otra PC del despacho.
+   Un guardado que no llega al servidor se AVISA (banner rojo), nunca en silencio. */
+const MStore = (()=>{
+  const SRV=api("/api/almacen"), DIRTYK="identidad_store_media_pendiente_v1";
+  const CLAVES=[LS_TPLS, LS_DEF];
+  const mem=Object.create(null), timers=Object.create(null);
+  let servidor=false, avisado=false;
+  const _lsGet=k=>{try{return localStorage.getItem(k);}catch(_){return null;}};
+  const _lsSet=(k,v)=>{try{localStorage.setItem(k,v);return true;}catch(_){return false;}};
+  const _lsDel=k=>{try{localStorage.removeItem(k);}catch(_){}};
+  const _dirty=()=>{try{return new Set(JSON.parse(_lsGet(DIRTYK)||"[]"));}catch(_){return new Set();}};
+  const _dg=s=>_lsSet(DIRTYK,JSON.stringify([...s]));
+  const _marcar=k=>{const s=_dirty();s.add(k);_dg(s);};
+  const _limpiar=k=>{const s=_dirty();if(s.delete(k))_dg(s);};
+  const _aSrv=v=>{if(v==null)return null;try{return JSON.parse(v);}catch(_){return v;}};
+  const _deSrv=d=> d==null?null:(typeof d==="string"?d:JSON.stringify(d));
+  const get=k=> (k in mem)?mem[k]:_lsGet(k);
+  function _enviar(cl){ const p={}; for(const k in cl)p[k]=_aSrv(cl[k]);
+    return fetch(SRV,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({claves:p})}).then(r=>r.ok?r.json():Promise.reject(r.status)); }
+  function _prog(k){ clearTimeout(timers[k]); timers[k]=setTimeout(()=>{ const v=(k in mem)?mem[k]:null;
+    _enviar({[k]:v}).then(()=>_limpiar(k)).catch(()=>_enviar({[k]:v}).then(()=>_limpiar(k)).catch(()=>_avisar())); },300); }
+  function set(k,v){ mem[k]=v; const ok=_lsSet(k,v);
+    if(servidor){_marcar(k);_prog(k);return true;} if(!ok)_avisar(); return ok; }
+  function remove(k){ delete mem[k]; _lsDel(k); _limpiar(k);
+    if(servidor) fetch(SRV,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({clave:k,borrar:true})}).catch(()=>{}); }
+  async function boot(){ let cl=null;
+    try{ const r=await fetch(SRV,{cache:"no-store"}); if(r.ok){const j=await r.json(); if(j&&j.ok){servidor=true;cl=j.claves||{};}} }catch(_){}
+    if(servidor){ const d=_dirty();
+      for(const k in cl){ if(d.has(k))continue; const s=_deSrv(cl[k]);
+        if(s==null){delete mem[k];_lsDel(k);continue;} mem[k]=s; _lsSet(k,s); }
+      const re={}; for(const k of new Set([...CLAVES,...d])){ const l=_lsGet(k);
+        if(l==null)continue; if(d.has(k)||!(k in cl)){mem[k]=l;re[k]=l;} }
+      if(Object.keys(re).length) _enviar(re).then(()=>{const s=_dirty();
+        Object.keys(re).forEach(k=>s.delete(k));_dg(s);}).catch(()=>{}); }
+    return servidor; }
+  function flush(){ if(!servidor)return; const d=_dirty(); if(!d.size)return;
+    const p={}; d.forEach(k=>{p[k]=_aSrv((k in mem)?mem[k]:_lsGet(k));}); const cuerpo=JSON.stringify({claves:p});
+    try{ const b=new Blob([cuerpo],{type:"application/json"}); if(navigator.sendBeacon&&navigator.sendBeacon(SRV,b))return; }catch(_){}
+    try{ const x=new XMLHttpRequest(); x.open("POST",SRV,false); x.setRequestHeader("Content-Type","application/json"); x.send(cuerpo); }catch(_){} }
+  function _avisar(){ if(avisado)return; avisado=true;
+    let b=document.getElementById("store-alerta");
+    if(!b){ b=document.createElement("div"); b.id="store-alerta";
+      b.style.cssText="position:fixed;left:0;right:0;top:0;z-index:99999;background:var(--puka-600);color:#fff;padding:10px 16px;font:600 14px/1.45 system-ui,sans-serif;display:flex;gap:12px;align-items:center;box-shadow:0 2px 14px rgba(0,0,0,.4)";
+      document.body.appendChild(b); }
+    const m=document.createElement("span"); m.style.flex="1";
+    m.textContent="⚠ Un cambio no se pudo guardar en el despacho (servidor). Revisa que el servidor siga encendido para no perder tus plantillas.";
+    const c=document.createElement("button"); c.textContent="Ocultar";
+    c.style.cssText="background:transparent;color:#fff;border:1px solid rgba(255,255,255,.6);border-radius:6px;padding:6px 12px;cursor:pointer";
+    c.onclick=()=>{b.remove();avisado=false;};
+    b.replaceChildren(m,c); }
+  return {get,set,remove,boot,flush};
+})();
+
+const leerMisTpls = ()=>{ try{ return JSON.parse(MStore.get(LS_TPLS)) || []; }catch(_){ return []; } };
+const guardarMisTpls = (arr)=>{ MStore.set(LS_TPLS, JSON.stringify(arr)); };
+const leerDefault = ()=>{ try{ return JSON.parse(MStore.get(LS_DEF)); }catch(_){ return null; } };
+const guardarDefault = (comp)=>{ MStore.set(LS_DEF, JSON.stringify(comp)); };
+const borrarDefault = ()=> MStore.remove(LS_DEF);
+
+/* Instantánea de la composición (sin el medio) */
+function plantillaActual(){
+  return { v:1, formato:S.formato, esVideo:esVideo(),
+    marco:{...S.marco}, rotulo:{...S.rotulo}, mosca:{...S.mosca},
+    cintillo:S.cintillo && {...S.cintillo}, textos:S.textos.map(t=>({...t})) };
+}
+/* Aplica una composición guardada MANTENIENDO la foto/video actual */
+function aplicarComposicion(comp){
+  const d = typeof comp==="string" ? JSON.parse(comp) : comp;
+  if(d.formato && d.formato!==S.formato) aplicarFormato(d.formato);
+  // Normaliza contra los defaults: plantillas guardadas con un esquema viejo
+  // adoptan los campos nuevos, y su `colores` se copia (sin referencias vivas).
+  if(d.marco)  S.marco  = {activo:false, modo:"tinta", ...MARCO_DEFAULTS,
+                           ...d.marco, colores:{...(d.marco.colores||{})}};
+  if(d.rotulo) S.rotulo = {...S.rotulo, ...d.rotulo};
+  if(d.mosca)  S.mosca  = {...S.mosca,  ...d.mosca};
+  S.cintillo = d.cintillo ? {...d.cintillo} : null;
+  S.textos = (d.textos||[]).map(t=>({...t, id:"t"+(idSec++)}));  // ids nuevos: evita choques
+  if(elMedio) S.rec = recCubrir();
+  S.sel = elMedio ? "medio" : (S.textos[0]?.id || null);
+  pintarTodo(); Hist.marcar();
+}
+/* Descripción corta para la tarjeta de la plantilla */
+function resumenComposicion(d){
+  const fmt = {cuadrada_1080x1080:"1:1", vertical_1080x1350:"4:5", horizontal_1440x1080:"4:3",
+    horizontal_1920x1080:"16:9", facebook_1200x630:"FB", estado_1080x1920:"9:16"};
+  const p = [fmt[d.formato]||""];
+  if(d.marco?.activo)  p.push((d.esVideo?"banda ":"marco ")+(d.marco.modo||""));
+  if(d.rotulo?.activo) p.push("rótulo "+(d.rotulo.kicker||"").toLowerCase());
+  if(d.cintillo)       p.push("cintillo");
+  if(d.textos?.length) p.push(d.textos.length+" texto"+(d.textos.length>1?"s":""));
+  if(d.mosca?.activo)  p.push("mosca");
+  return p.filter(Boolean).join(" · ");
+}
+/* Igualdad laxa: ¿esta plantilla es la predeterminada actual? */
+function esLaDefault(comp){
+  const d = leerDefault(); if(!d) return false;
+  return JSON.stringify({...d, id:undefined}) === JSON.stringify({...comp, id:undefined});
+}
+function pintarMisPlantillas(){
+  const arr = leerMisTpls(), cont = $("#mis-plantillas"), wrap = $("#mis-plantillas-wrap");
+  if(!cont || !wrap) return;
+  wrap.style.display = arr.length ? "block" : "none";
+  cont.innerHTML = arr.map((p,i)=>{
+    const def = esLaDefault(p.comp);
+    return `<button class="p-btn preset" data-i="${i}"
+        title="Aplicar «${esc(p.nombre)}» (mantiene la foto/video)">
+      <span class="ic">${def?"⭐":"🗂"}</span>
+      <span class="txt"><b>${esc(p.nombre)}</b><span>${esc(resumenComposicion(p.comp))}</span></span>
+      <span class="tpl-acc">
+        <span data-a="def" class="${def?"es-def":""}" title="Fijar como predeterminada">${def?"★":"☆"}</span>
+        <span data-a="del" title="Eliminar">✕</span>
+      </span>
+    </button>`;
+  }).join("");
+  $$("#mis-plantillas .preset").forEach(el=>el.onclick = (ev)=>{
+    const a = ev.target?.dataset?.a, i = +el.dataset.i, arr = leerMisTpls(), p = arr[i];
+    if(!p) return;
+    if(a==="del"){
+      if(esLaDefault(p.comp)) borrarDefault();
+      arr.splice(i,1); guardarMisTpls(arr); pintarMisPlantillas(); toast("Plantilla eliminada"); return;
+    }
+    if(a==="def"){
+      if(esLaDefault(p.comp)){ borrarDefault(); toast("Predeterminada quitada"); }
+      else { guardarDefault(p.comp); toast(`«${p.nombre}» será la predeterminada ⭐`); }
+      pintarMisPlantillas(); return;
+    }
+    aplicarComposicion(p.comp); toast(`Plantilla aplicada: ${p.nombre}`);
+  });
+}
+
+/* Sugerencia de nombre a partir de la composición */
+function sugerirNombrePlantilla(){
+  const r = resumenComposicion(plantillaActual());
+  const t = S.textos[0]?.texto?.split("\n")[0]?.trim();
+  return (t && t.length<=28 ? t : (esVideo()?"Video":"Foto")+" · "+r).slice(0,40);
+}
+/* Guardar la composición actual como una nueva plantilla en «Mis plantillas» */
+function guardarComoNueva(){
+  const sug = sugerirNombrePlantilla();
+  abrirModal(`<h3>Guardar como nueva plantilla</h3>
+    <div class="fila"><label>Nombre</label><input type="text" id="tpl-nom" value="${esc(sug)}"></div>
+    <div style="font-size:12px;color:var(--ui-texto2);margin:2px 0 4px">
+      Se guarda la composición actual (formato, marco, rótulos, cintillo y textos)
+      <b>sin la foto/video</b>, para reutilizarla con cualquier imagen. Queda en
+      «Mis plantillas» (en este navegador).</div>
+    <div style="margin-top:12px;text-align:right">
+      <button class="tb-btn" onclick="cerrarModal()">Cancelar</button>
+      <button class="tb-btn primario" id="tpl-go">Guardar</button></div>`);
+  const inp = $("#tpl-nom"); inp.focus(); inp.select();
+  const go = ()=>{
+    const nombre = (inp.value||sug).trim() || sug;
+    const arr = leerMisTpls();
+    arr.push({id:"m"+Date.now(), nombre, comp:plantillaActual()});
+    guardarMisTpls(arr); pintarMisPlantillas(); cerrarModal();
+    toast(`Guardada en «Mis plantillas»: ${nombre} ✓`);
+  };
+  $("#tpl-go").onclick = go;
+  inp.onkeydown = e=>{ if(e.key==="Enter") go(); };
+}
+function guardarPredeterminada(){
+  guardarDefault(plantillaActual()); pintarMisPlantillas();
+  toast("Predeterminada guardada ⭐ — se abrirá sola la próxima vez");
+}
+function quitarPredeterminada(){ borrarDefault(); pintarMisPlantillas(); toast("Predeterminada quitada"); }
+
+/* Menú "Plantilla ▾" del topbar */
+const _btnPl = $("#btn-plantilla"); if(_btnPl) _btnPl.onclick = (e)=>{
+  const prev = $("#tplmenu"); if(prev){ prev.remove(); return; }
+  const r = e.currentTarget.getBoundingClientRect();
+  const m = document.createElement("div"); m.id = "tplmenu";
+  m.style.cssText = `position:fixed;top:${Math.round(r.bottom+6)}px;right:${Math.round(innerWidth-r.right)}px;`
+    + `z-index:120;background:var(--est-sup-3);border:1px solid var(--est-borde-control);border-radius:var(--est-radio);`
+    + `padding:4px;box-shadow:var(--est-sombra-menu);min-width:290px`;
+  const hayDef = !!leerDefault();
+  const it = (a,t,s)=>`<button data-a="${a}" style="display:block;width:100%;text-align:left;background:none;`
+    + `border:0;color:var(--est-texto);padding:8px 10px;border-radius:var(--est-radio-sm);cursor:pointer;line-height:1.35">`
+    + `${t}${s?`<br><span style="color:var(--ui-texto2);font-size:11px">${s}</span>`:""}</button>`;
+  m.innerHTML = it("new","💾&nbsp; Guardar como nueva plantilla","Crea una variante en «Mis plantillas» (Ctrl+S)")
+    + it("def","⭐&nbsp; Guardar como predeterminada","Se abrirá sola la próxima vez que entres")
+    + (hayDef ? it("clr","✖&nbsp; Quitar predeterminada","") : "");
+  document.body.appendChild(m);
+  m.querySelectorAll("button").forEach(b=>{
+    b.onmouseenter = ()=>b.style.background = "var(--est-sup-hover)";
+    b.onmouseleave = ()=>b.style.background = "none";
+    b.onclick = ()=>{ const a = b.dataset.a; m.remove();
+      if(a==="new") guardarComoNueva(); else if(a==="def") guardarPredeterminada(); else quitarPredeterminada(); };
+  });
+  const close = (ev)=>{ if(!m.contains(ev.target) && ev.target!==e.currentTarget){
+    m.remove(); document.removeEventListener("mousedown", close); } };
+  setTimeout(()=>document.addEventListener("mousedown", close), 0);
+};
+
+/* ---------------- Zonas seguras / preview / estado ---------------- */
+$("#btn-zonas").onclick = ()=>{ S.zonas = !S.zonas;
+  $("#btn-zonas").classList.toggle("on", S.zonas); dibujar(); };
+$("#btn-preview").onclick = async ()=>{
+  if(esVideo()){ reproducir(); return; }
+  const off = document.createElement("canvas"); off.width=S.W; off.height=S.H;
+  await dibujar(true, off.getContext("2d"));
+  abrirModal(`<h3>Vista previa</h3><img src="${off.toDataURL("image/jpeg",.9)}">
+    <div style="margin-top:10px;text-align:right">
+    <button class="tb-btn" onclick="cerrarModal()">Cerrar</button></div>`);
+};
+function pintarEstado(){
+  $("#est-formato").textContent = "Formato: "+S.W+"×"+S.H;
+  $("#est-medio").textContent = S.medio ? (esVideo()?"Video: ":"Foto: ")+(S.medio.nombre||"") : "Sin archivo";
+  $("#est-pieza").textContent = "Banco y plantillas: carpetas del despacho (compartidas)";
+}
+
+/* ---------------- Exportar ---------------- */
+function abrirModal(html){ $("#modal").innerHTML = html; $("#modal-fondo").classList.add("on"); }
+window.cerrarModal = ()=>$("#modal-fondo").classList.remove("on");
+$("#modal-fondo").addEventListener("click", ev=>{ if(ev.target.id==="modal-fondo") cerrarModal(); });
+
+$("#btn-export").onclick = ()=>{
+  if(!S.medio){ toast("Primero carga una foto o un video"); return; }
+  const nombreDef = (esVideo() ? "video" : "foto") + "-actividad";
+  const canales = [["facebook","Facebook"],["instagram","Instagram"],["tiktok","TikTok"],
+    ["estados","Estados (9:16)"],["x","X"],["youtube","YouTube"],["linkedin","LinkedIn"],
+    ["transmisiones","Transmisiones (EN VIVO)"]];
+  const cSug = canalSugerido();
+  const canalOpts = canales.map(([v,t])=>`<option value="${v}" ${v===cSug?"selected":""}>${t}</option>`).join("");
+  abrirModal(`<h3>Exportar ${esVideo()?"video (MP4)":"fotografía"}</h3>
+    <div class="fila"><label>Nombre</label><input type="text" id="x-nom" value="${nombreDef}"></div>
+    <div class="fila"><label>Canal</label><select id="x-canal">${canalOpts}</select></div>
+    ${esVideo() ? `<div style="font-size:12.5px;color:var(--ui-texto2);margin:6px 0">
+        ${segsV().length>1
+          ? `Se exportan ${segsV().length} tramos unidos (total ${fmtT(durSegs())})`
+          : `Se exporta el tramo ⟦ ${fmtT(S.video.ini)} – ${fmtT(S.video.fin)} ⟧`} a ${S.W}×${S.H}
+        con los overlays visibles (ffmpeg, en esta computadora).</div>
+        <div style="font-size:12.5px;color:var(--ui-texto2);margin:6px 0">¿Varios clips, títulos, transiciones,
+        música o subtítulos automáticos? <a class="enlace" href="video.html?medio=${encodeURIComponent(S.medio.url)}&tipo=video&nombre=${encodeURIComponent(S.medio.nombre||"")}">Abrir este video en el editor de video</a>.</div>`
+      : `<div class="fila"><label>Tipo</label><select id="x-tipo">
+          <option value="jpg">JPG (redes)</option><option value="png">PNG</option></select></div>`}
+    <div style="margin-top:12px; text-align:right">
+      <button class="tb-btn" onclick="cerrarModal()">Cancelar</button>
+      <button class="tb-btn primario" id="x-go">Exportar</button></div>`);
+  $("#x-go").onclick = esVideo() ? exportarVideo : exportarFoto;
+};
+
+function canalSugerido(){
+  const r = S.W / S.H;
+  if (Math.abs(r - 9/16) < 0.06) return "estados";   // vertical 9:16 → estados/stories
+  if (Math.abs(r - 16/9) < 0.06) return "youtube";   // 16:9
+  if (Math.abs(r - 1200/630) < 0.08) return "facebook";
+  return "instagram";                                 // 1:1, 4:5 → post
+}
+
+async function exportarFoto(){
+  const nombre = ($("#x-nom").value||"foto").trim();
+  const tipo = $("#x-tipo").value;
+  const canal = $("#x-canal").value;
+  $("#x-go").classList.add("cargando"); $("#x-go").textContent = "Exportando…";
+  const off = document.createElement("canvas"); off.width=S.W; off.height=S.H;
+  await dibujar(true, off.getContext("2d"));
+  const dataURL = tipo==="png" ? off.toDataURL("image/png")
+                               : off.toDataURL("image/jpeg", .92);
+  try{
+    const r = await fetch(api("/api/exportar-foto"), {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({nombre: nombre+"."+tipo, canal, dataURL,
+        origen: (S.medio && (S.medio.original || S.medio.url)) || ""})});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error);
+    abrirModal(`<h3>✓ Fotografía exportada</h3>
+      <p><b>${esc(d.archivo)}</b> quedó guardada en
+      <code>${esc((d.url||"").replace(BASE,"/").replace(/^\//,"prensa/").replace(/\/[^/]*$/,"/"))}</code>${d.banco_url ?
+      `<br>y copiada al <b>banco compartido</b> (editadas-editor) — ya puedes usarla
+      en el <a class="enlace" href="editor.html">editor de publicaciones</a> (panel
+      Imagen → 🔄).` : "."}</p>
+      <div style="text-align:right">
+        <a class="tb-btn" href="${d.url}" download>⬇ Descargar</a>
+        <button class="tb-btn primario" onclick="cerrarModal()">Listo</button></div>`);
+  }catch(e){ toast("Error al exportar: "+e.message); cerrarModal(); }
+}
+
+async function exportarVideo(){
+  const nombre = ($("#x-nom").value||"video").trim();
+  const canal = $("#x-canal").value;
+  $("#x-go").classList.add("cargando"); $("#x-go").textContent = "Preparando…";
+  pausarVideo();
+  // El navegador compone TODOS los overlays en un PNG; ffmpeg solo recorta y superpone.
+  const off = document.createElement("canvas"); off.width=S.W; off.height=S.H;
+  const octx = off.getContext("2d");
+  await dibujarOverlays(octx);
+  const overlay = off.toDataURL("image/png");
+  try{
+    const r = await fetch(apiVideo("/api/exportar-video"), {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({origen:aVideo(S.medio.url), nombre:nombre+".mp4", canal,
+        inicio:S.video.ini, fin:S.video.fin, w:S.W, h:S.H,
+        recuadre:S.rec, overlay, ajustes:S.ajustes,
+        segmentos:segsV().map(x=>({ini:x.ini, fin:x.fin}))})});
+    const d = await r.json();
+    if(!d.ok) throw new Error(d.error||"no se pudo iniciar");
+    abrirModal(`<h3>Exportando video…</h3>
+      <p id="x-est">ffmpeg está procesando el tramo seleccionado. Esto puede tardar
+      según la duración (quédate en esta ventana).</p>`);
+    const id = d.trabajo;
+    const timer = setInterval(async ()=>{
+      const t = await (await fetch(apiVideo("/api/trabajo?id="+id))).json();
+      if(t.estado === "listo"){ clearInterval(timer);
+        abrirModal(`<h3>✓ Video exportado</h3>
+          <p><b>${esc(t.archivo)}</b> quedó en
+          <code>${esc((t.url||"").replace(VIDEO_BASE,"/").replace(/^\//,"prensa/").replace(/\/[^/]*$/,"/"))}</code></p>
+          <video src="${t.url}" controls style="width:100%;border-radius:8px"></video>
+          <div style="text-align:right;margin-top:10px">
+            <a class="tb-btn" href="${t.url}" download>⬇ Descargar MP4</a>
+            <button class="tb-btn primario" onclick="cerrarModal()">Listo</button></div>`);
+      }else if(t.estado === "error"){ clearInterval(timer);
+        abrirModal(`<h3>✗ Error al exportar</h3><p style="font-size:12.5px">${esc(t.error||"")}</p>
+          <div style="text-align:right"><button class="tb-btn" onclick="cerrarModal()">Cerrar</button></div>`);
+      }
+    }, 1200);
+  }catch(e){ toast("Error: "+e.message); cerrarModal(); }
+}
+
+/* ---------------- Proyectos ---------------- */
+$("#btn-proyecto").onclick = async ()=>{
+  let lista = [];
+  try{ lista = await (await fetch(api("/api/proyectos-media"))).json(); }catch(_){ }
+  lista = lista.filter(p => !String(p.nombre).startsWith("video-"));   // los de video.html se abren allí
+  abrirModal(`<h3>💾 Proyectos</h3>
+    <div class="fila"><input type="text" id="py-nom" placeholder="nombre del proyecto"
+      value="${esc(S.medio?.nombre?.replace(/\.[^.]+$/,"")||"pieza")}">
+      <button class="tb-btn primario" id="py-guardar">Guardar</button></div>
+    <div style="max-height:40vh;overflow:auto">${lista.map(p=>`
+      <button class="p-btn" data-py="${esc(p.nombre)}"><b>${esc(p.nombre)}</b>
+        <span style="color:var(--ui-texto2);font-size:11.5px"> · ${p.fecha}</span></button>`).join("")
+      || '<div style="color:var(--ui-texto2)">No hay proyectos guardados aún.</div>'}</div>
+    <div style="text-align:right;margin-top:8px">
+      <button class="tb-btn" onclick="cerrarModal()">Cerrar</button></div>`);
+  $("#py-guardar").onclick = async ()=>{
+    const nombre = $("#py-nom").value.trim() || "pieza";
+    const datos = {v:1, estado: JSON.parse(Hist.foto()),
+                   medio: S.medio ? {url:S.medio.url, tipo:S.medio.tipo, nombre:S.medio.nombre} : null};
+    const r = await fetch(api("/api/proyecto-media"), {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({nombre, datos})});
+    const d = await r.json();
+    toast(d.ok ? "Proyecto guardado ✓" : "Error: "+d.error); cerrarModal();
+  };
+  $$("#modal [data-py]").forEach(b=>b.onclick = async ()=>{
+    try{
+      const p = await (await fetch(api("/api/proyecto-media?nombre=")+encodeURIComponent(b.dataset.py))).json();
+      const datos = p.datos;
+      if(datos.medio) await usarMedio(datos.medio.url, datos.medio.tipo, datos.medio.nombre);
+      Hist.aplicar(JSON.stringify(datos.estado));
+      Hist.marcar(); cerrarModal(); toast("Proyecto cargado ✓");
+    }catch(e){ toast("No se pudo cargar el proyecto"); }
+  });
+};
+
+/* ---------------- Teclado y arranque ---------------- */
+document.addEventListener("keydown", ev=>{
+  if(ev.target.matches("input,textarea,select")) return;
+  const ctrl = ev.ctrlKey || ev.metaKey;
+  if(ctrl && ev.key==="z" && !ev.shiftKey){ ev.preventDefault(); Hist.atras(); }
+  else if(ctrl && (ev.key==="Z" || (ev.key==="z"&&ev.shiftKey) || ev.key==="y")){
+    ev.preventDefault(); Hist.adelante(); }
+  else if(ctrl && (ev.key==="s" || ev.key==="S")){ ev.preventDefault(); guardarComoNueva(); }
+  else if(ev.key==="Delete" || ev.key==="Backspace"){
+    if(S.sel==="cintillo"){ S.cintillo=null; S.sel=null; }
+    else if(S.sel==="marco"){ S.marco.activo=false; S.sel=null; }
+    else S.textos = S.textos.filter(t=>t.id!==S.sel);
+    pintarTodo(); Hist.marcar();
+  }else if(ev.key==="Escape"){
+    if(S.sel){ S.sel=null; pintarProps(); pintarCapas(); dibujar(); return; }
+    // TODO en blanco: quitar el medio, revelado, componentes y textos
+    detenerVideo(); elMedio=null; S.medio=null; S.rec=null;
+    S.textos=[]; S.cintillo=null; S.marco.activo=false; S.rotulo.activo=false;
+    S.mosca.activo=false; S.zonas=false;
+    S.ajustes={br:100,ct:100,sat:100,hue:0,blur:0};
+    S.video={ini:0,fin:0,dur:0,segs:[]};
+    pintarTodo(); Hist.marcar();
+    toast("Todo en blanco — listo para empezar de cero");
+  }else if(ev.key.startsWith("Arrow")){
+    const paso = ev.shiftKey?10:1;
+    if(S.sel === "marco" && S.marco.activo){
+      if(ev.key==="ArrowLeft")S.marco.textoDX=(S.marco.textoDX||0)-paso;
+      if(ev.key==="ArrowRight")S.marco.textoDX=(S.marco.textoDX||0)+paso;
+      if(ev.key==="ArrowUp")S.marco.textoDY=(S.marco.textoDY||0)-paso;
+      if(ev.key==="ArrowDown")S.marco.textoDY=(S.marco.textoDY||0)+paso;
+      ev.preventDefault(); dibujar(); return;
+    }
+    const obj = S.sel==="cintillo" ? S.cintillo : S.textos.find(t=>t.id===S.sel);
+    if(obj){
+      if(ev.key==="ArrowLeft")obj.x-=paso; if(ev.key==="ArrowRight")obj.x+=paso;
+      if(ev.key==="ArrowUp")obj.y-=paso; if(ev.key==="ArrowDown")obj.y+=paso;
+      ev.preventDefault(); dibujar(); }
+  }else if(ev.key===" " && esVideo()){ ev.preventDefault();
+    reproduciendo ? pausarVideo() : reproducir(); }
+});
+$("#btn-undo").onclick = ()=>Hist.atras();
+$("#btn-redo").onclick = ()=>Hist.adelante();
+
+function pintarTodo(){
+  pintarPresets(); pintarMejora(); pintarRevelado(); pintarFormatos(); pintarComponentes();
+  pintarProps(); pintarCapas(); pintarEstado();
+  $("#timeline").classList.toggle("activo", esVideo());
+  iniciarBucle(); dibujar();
+}
+
+(async function iniciar(){
+  try{ await cargarCfg(); }
+  catch(e){ $("#sin-servidor").classList.add("on"); return; }
+  // Insumos de los marcos nativos (logo del Congreso, obelisco, recorte):
+  // asíncrono; al llegar cada uno se redibuja si el marco está en uso.
+  for(const [k, u] of Object.entries(CFG.insumos || {}))
+    cargarImg(u).then(im=>{ MKASSETS[k] = im; if(S.marco.activo) dibujar(); });
+  await cargarBanco();
+  // Carga el estado DURABLE (servidor → espejo local) ANTES de aplicar nada, para
+  // que la predeterminada sea SIEMPRE la última guardada y no una copia antigua.
+  await MStore.boot();
+  // Vaciar lo pendiente al salir (cerrar/refrescar/cambiar de app): sin esto, un
+  // guardado con debounce podía perderse si salías rápido.
+  const _flush=()=>MStore.flush();
+  window.addEventListener("pagehide",_flush);
+  window.addEventListener("beforeunload",_flush);
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden")_flush(); });
+  // Arranque: plantilla predeterminada del usuario (⭐) o formato por defecto.
+  const def = leerDefault();
+  if(def) aplicarComposicion(def);
+  else { aplicarFormato(S.formato); pintarTodo(); Hist.marcar(); }
+  requestAnimationFrame(()=>ajustarVista(true));   // reajusta el zoom tras asentar el layout
+  // Enlaces profundos: media.html?imagen=/banco/... | ?video=/banco/...
+  const q = new URLSearchParams(location.search);
+  if(q.get("imagen")) usarMedio(q.get("imagen"), "foto", decodeURIComponent(q.get("imagen").split("/").pop()));
+  if(q.get("video")) usarMedio(q.get("video"), "video", decodeURIComponent(q.get("video").split("/").pop()));
+})();
+
+/* ---------------- Riel del estudio: salta a cada sección del panel izquierdo ---------------- */
+(()=>{
+  const izq = $("#izq"), botones = [...document.querySelectorAll("#riel .est-riel__boton")];
+  const marcar = id => botones.forEach(b=>b.classList.toggle("on", b.dataset.sec===id));
+  botones.forEach(b=>b.onclick = ()=>{
+    const sec = document.getElementById(b.dataset.sec); if(!sec) return;
+    sec.scrollIntoView({block:"start", behavior:"smooth"}); marcar(b.dataset.sec);
+  });
+  izq.addEventListener("scroll", ()=>{
+    const tope = izq.getBoundingClientRect().top + 48;
+    let actual = botones[0].dataset.sec;
+    for(const b of botones){ const sec = document.getElementById(b.dataset.sec);
+      if(sec && sec.getBoundingClientRect().top <= tope) actual = b.dataset.sec; }
+    marcar(actual);
+  }, {passive:true});
+})();
+</script>
+</body>
+</html>

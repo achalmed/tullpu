@@ -1,0 +1,1776 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Estudio · Fotos</title>
+<link rel="stylesheet" href="estudio-tema.css"><!-- tema único del estudio: tokens --est-* y componentes .est-* -->
+<script src="estudio-iconos.js"></script><!-- juego único de íconos de la interfaz: icono("nombre") -->
+<script src="estudio-movil.js" defer></script><!-- teléfono: paneles en cajones, cabecera deslizable -->
+<!--
+  EDITOR DE FOTOS del estudio (capas y retoque, al estilo de Photoshop o GIMP) — hermano de editor.html
+  (publicaciones) y media.html (fotos y videos con plantilla).
+
+  El motor es miniPaint v4.14.3 (vendor/minipaint/, MIT, sin modificar), cargado en el marco foto-lienzo.html
+  con el tema del estudio. Esta página pone alrededor el cromo del estudio y lo une al servidor:
+    · abrir: banco de fotos (/api/media; detrás de Qillqa trae también la Fototeca), subida y ?imagen=<url>;
+    · guardar: «Guardar en la Fototeca» (POST api/fototeca-pieza, solo si /api/health dice fototeca:true),
+      exportar a la salida de redes (/api/exportar-foto), descarga, y el proyecto con capas
+      (/api/proyecto-foto, el JSON de miniPaint) para retomarlo;
+    · marca: formatos de redes, paleta de los tokens (/api/design), marcos de plantillas/marco_foto_video y logos
+      del perfil (/api/design → marca.logos) como capas; tipografías del perfil y del servidor (/api/fuentes)
+      en la lista de fuentes del texto, sin «Add Font» ni búsqueda de imágenes (no hay red);
+    · tono: niveles con histograma y curvas por canal con vista previa en el lienzo, y los ajustes y filtros del motor;
+    · selección propia (rectángulo, elipse, lazo, lazo poligonal, varita; sumar, restar, intersecar, calado) que
+      el estudio impone a las acciones del motor (Sel), también en capas giradas, con deshacer como cualquier otra
+      acción; voltear con selección refleja solo lo elegido o toda la capa (a elección); los pinceles recortados por
+      una selección se guardan rasterizados en el proyecto (MP.proyectoJSON).
+  Rutas siempre relativas a la página (api()): sirve en la raíz o bajo /estudio/ detrás de un proxy.
+  Ningún color se escribe aquí: el cromo usa --est-*, y la paleta de marca llega de /api/design.
+-->
+<style>
+html,body{margin:0; height:100%; overflow:hidden;}
+[hidden]{display:none !important;}
+body{display:grid; grid-template-rows:var(--est-alto-cabecera) 1fr var(--est-alto-estado);}
+#main{display:grid; grid-template-columns:var(--est-ancho-riel) var(--est-ancho-panel-izq) 1fr; min-height:0;}
+#main.sin-panel{grid-template-columns:var(--est-ancho-riel) 1fr;}
+#main.sin-panel #izq{display:none;}
+#izq{border-right:1px solid var(--est-borde); min-width:0;}
+#izq .est-panel__cuerpo{padding-top:var(--est-esp-2);}
+.vista{display:none;} .vista.on{display:block;}
+#lienzo-pozo{position:relative; min-width:0; min-height:0; background:var(--est-sup-0);}
+#lienzo{position:absolute; inset:0; width:100%; height:100%; border:0; display:block; background:var(--est-sup-0);}
+#cargando{position:absolute; inset:0; display:grid; place-items:center; color:var(--est-texto-3); pointer-events:none;}
+.est-cabecera{overflow:hidden;}
+@media (max-width:1180px){ .est-cabecera .txt{display:none;} .est-cabecera__titulo small{display:none;} }
+@media (max-width:760px){ #main,#main.sin-panel{grid-template-columns:var(--est-ancho-riel) 1fr;} #b-real,#zoom-cifra{display:none;} }
+.est-cabecera__titulo small{font-weight:400; color:var(--est-texto-3); font-size:var(--est-fs-xs); margin-left:4px;}
+.fila-botones{display:flex; flex-wrap:wrap; gap:var(--est-esp-1);}
+.fila-botones .est-boton{flex:1 1 calc(50% - 4px); justify-content:flex-start;}
+.ancho{width:100%; box-sizing:border-box;}
+/* banco */
+#banco-rejilla{display:grid; grid-template-columns:repeat(3,1fr); gap:4px; margin-top:var(--est-esp-2);}
+.foto{position:relative; aspect-ratio:1; border-radius:var(--est-radio-sm); overflow:hidden; cursor:pointer;
+  background:var(--est-sup-3); border:1px solid var(--est-borde); padding:0;}
+.foto img{width:100%; height:100%; object-fit:cover; display:block;}
+.foto:hover{border-color:var(--est-acento-linea);}
+.foto:focus-visible{box-shadow:var(--est-foco);}
+.foto span{position:absolute; left:0; right:0; bottom:0; padding:2px 4px; font-size:10px; color:var(--est-texto);
+  background:color-mix(in srgb,var(--est-sup-0) 78%,transparent); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+/* formatos */
+.formato{display:flex; align-items:center; gap:var(--est-esp-2); width:100%; padding:6px 8px; margin-bottom:4px;
+  background:var(--est-sup-3); border:1px solid var(--est-borde); border-radius:var(--est-radio); color:var(--est-texto);
+  font:inherit; cursor:pointer; text-align:left;}
+.formato:hover{border-color:var(--est-borde-fuerte); background:var(--est-sup-hover);}
+.formato .muestra{flex:none; width:28px; height:28px; display:grid; place-items:center;}
+.formato .muestra i{display:block; border:1.5px solid var(--est-texto-2); border-radius:2px;}
+.formato b{font-weight:var(--est-peso-medio);}
+.formato small{display:block; color:var(--est-texto-3); font-size:var(--est-fs-xs);}
+/* paleta, marcos y logos */
+#paleta{display:grid; grid-template-columns:repeat(6,1fr); gap:6px;}
+.muestra-color{aspect-ratio:1; border-radius:var(--est-radio-sm); border:1px solid var(--est-borde-fuerte); cursor:pointer; padding:0;}
+.muestra-color:hover{box-shadow:var(--est-foco);}
+.rejilla-2{display:grid; grid-template-columns:repeat(2,1fr); gap:6px;}
+.insumo{display:flex; flex-direction:column; gap:4px; padding:4px; background:var(--est-sup-3); border:1px solid var(--est-borde);
+  border-radius:var(--est-radio); cursor:pointer; color:var(--est-texto-2); font:var(--est-fs-xs)/1.3 var(--est-fuente); text-align:left;}
+.insumo:hover{border-color:var(--est-acento-linea); color:var(--est-texto);}
+.insumo .vista-insumo{height:84px; display:grid; place-items:center;}
+.insumo img{max-width:100%; max-height:84px; object-fit:contain;}
+/* tono */
+#tono-vista{width:100%; height:auto; display:block; border-radius:var(--est-radio-sm);}
+#histograma{width:100%; height:auto; display:block; margin-top:4px; background:var(--est-sup-1); border-radius:var(--est-radio-sm);}
+#sel-modo>button{padding:0 5px;}
+#v-seleccion .est-fila>label{width:44px;}
+.deslizador{display:grid; grid-template-columns:64px 1fr 40px; align-items:center; gap:6px; margin-bottom:4px;
+  font-size:var(--est-fs-sm); color:var(--est-texto-3);}
+.deslizador output{text-align:right; font-variant-numeric:tabular-nums; color:var(--est-texto-2);}
+/* tipografías */
+.tipografias{display:flex; flex-direction:column; gap:4px; margin-top:var(--est-esp-2); max-height:240px; overflow:auto;}
+.tipografia{display:flex; align-items:baseline; gap:6px; padding:6px 8px; background:var(--est-sup-3); border:1px solid var(--est-borde);
+  border-radius:var(--est-radio); color:var(--est-texto); cursor:pointer; text-align:left; font-size:17px;}
+.tipografia:hover{border-color:var(--est-acento-linea);}
+.tipografia small{margin-left:auto; font:var(--est-fs-xs)/1 var(--est-fuente); color:var(--est-texto-3);}
+/* proyectos */
+.proyecto{display:flex; align-items:center; gap:6px; width:100%; padding:6px 8px; margin-bottom:4px; background:var(--est-sup-3);
+  border:1px solid var(--est-borde); border-radius:var(--est-radio); color:var(--est-texto); font:inherit; cursor:pointer; text-align:left;}
+.proyecto:hover{border-color:var(--est-borde-fuerte);}
+.proyecto small{margin-left:auto; color:var(--est-texto-3); font-size:var(--est-fs-xs);}
+/* modales */
+.est-modal{width:min(440px,92vw);}
+.est-modal .acciones{display:flex; gap:var(--est-esp-2); justify-content:flex-end; margin-top:var(--est-esp-4); flex-wrap:wrap;}
+.est-toast.on{opacity:1;}
+#estado-servidor .punto{width:7px; height:7px; border-radius:50%; background:var(--est-texto-off);}
+#estado-servidor.vivo .punto{background:var(--est-exito);}
+</style>
+</head>
+<body data-movil-izq="#izq">
+
+<header class="est-cabecera">
+  <span class="est-cabecera__titulo">Fotos<small>capas y retoque</small></span>
+  <span class="est-sep"></span>
+  <div class="est-grupo">
+    <button class="est-boton est-boton--icono" id="b-deshacer" title="Deshacer (Ctrl+Z)" aria-label="Deshacer"><i class="ico" data-ico="deshacer"></i></button>
+    <button class="est-boton est-boton--icono" id="b-rehacer" title="Rehacer (Ctrl+Y)" aria-label="Rehacer"><i class="ico" data-ico="rehacer"></i></button>
+  </div>
+  <span class="est-sep"></span>
+  <div class="est-grupo">
+    <button class="est-boton est-boton--icono" id="b-alejar" title="Alejar" aria-label="Alejar"><i class="ico" data-ico="alejar"></i></button>
+    <span class="est-cifra" id="zoom-cifra" title="Zoom">100%</span>
+    <button class="est-boton est-boton--icono" id="b-acercar" title="Acercar" aria-label="Acercar"><i class="ico" data-ico="acercar"></i></button>
+    <button class="est-boton est-boton--icono" id="b-ajustar" title="Ajustar a la ventana" aria-label="Ajustar a la ventana"><i class="ico" data-ico="ajustar"></i></button>
+    <button class="est-boton est-boton--sm" id="b-real" title="Tamaño real (100 %)">1:1</button>
+  </div>
+  <span class="est-sep"></span>
+  <button class="est-boton" id="b-subir" title="Abrir una foto de esta computadora"><i class="ico" data-ico="subir"></i><span class="txt">Abrir archivo</span></button>
+  <button class="est-boton" id="b-atajos" title="Atajos de teclado del lienzo"><i class="ico" data-ico="info"></i><span class="txt">Atajos</span></button>
+  <span class="est-empuje"></span>
+  <a class="est-boton" href="editor.html" title="Editor de publicaciones (plantillas de diseño)"><i class="ico" data-ico="plantillas"></i><span class="txt">Publicaciones</span></a>
+  <a class="est-boton" href="media.html" title="Fotos y videos con plantilla de marca"><i class="ico" data-ico="pelicula"></i><span class="txt">Fotos y videos</span></a>
+  <span class="est-sep"></span>
+  <button class="est-boton est-boton--borde" id="b-proyecto" title="Guardar el proyecto con sus capas (Ctrl+S)"><i class="ico" data-ico="guardar"></i><span class="txt">Guardar proyecto</span></button>
+  <button class="est-boton est-boton--primario" id="b-exportar" title="Exportar la imagen (Ctrl+E)"><i class="ico" data-ico="descargar"></i>Exportar</button>
+</header>
+
+<div id="main">
+  <nav class="est-riel" id="riel" aria-label="Paneles">
+    <button class="est-riel__boton on" data-vista="v-banco" title="Banco de fotos" aria-label="Banco de fotos"><i class="ico" data-ico="imagen"></i></button>
+    <button class="est-riel__boton" data-vista="v-seleccion" title="Selección: rectángulo, elipse, lazo, varita" aria-label="Selección"><i class="ico" data-ico="seleccion"></i></button>
+    <button class="est-riel__boton" data-vista="v-formato" title="Formato, recorte y giro" aria-label="Formato, recorte y giro"><i class="ico" data-ico="recorte"></i></button>
+    <button class="est-riel__boton" data-vista="v-tono" title="Tono, ajustes y filtros" aria-label="Tono, ajustes y filtros"><i class="ico" data-ico="ajustes"></i></button>
+    <button class="est-riel__boton" data-vista="v-marca" title="Marca: paleta, marcos y logos" aria-label="Marca"><i class="ico" data-ico="paleta"></i></button>
+    <button class="est-riel__boton" data-vista="v-capas" title="Capas" aria-label="Capas"><i class="ico" data-ico="capas"></i></button>
+    <button class="est-riel__boton" data-vista="v-proyectos" title="Proyectos guardados" aria-label="Proyectos guardados"><i class="ico" data-ico="carpeta"></i></button>
+  </nav>
+
+  <aside class="est-panel" id="izq">
+    <div class="est-panel__cabecera"><span class="est-panel__titulo" id="izq-titulo">Banco de fotos</span>
+      <span class="est-empuje"></span>
+      <button class="est-boton est-boton--sm est-boton--icono" id="b-plegar" title="Ocultar el panel" aria-label="Ocultar el panel"><i class="ico ico--sm" data-ico="cerrar"></i></button>
+    </div>
+    <div class="est-panel__cuerpo">
+
+      <!-- ================= BANCO ================= -->
+      <section class="vista on" id="v-banco" data-titulo="Banco de fotos">
+        <div class="est-seccion">
+          <div class="est-fila"><label>Abrir como</label>
+            <div class="est-segmentado" id="modo-abrir">
+              <button class="on" data-modo="documento" title="La foto abre un documento nuevo del tamaño de la foto">Documento</button>
+              <button data-modo="capa" title="La foto se añade como capa encima de lo que hay">Capa nueva</button>
+            </div>
+          </div>
+          <input class="est-campo ancho" id="banco-buscar" type="search" placeholder="Buscar en el banco y la Fototeca…" autocomplete="off">
+          <div class="est-fila" style="margin-top:8px;margin-bottom:0">
+            <span class="est-nota" id="banco-cuenta">—</span><span class="est-empuje"></span>
+            <button class="est-boton est-boton--sm" id="b-banco-refrescar" title="Volver a leer el banco"><i class="ico ico--sm" data-ico="refrescar"></i>Refrescar</button>
+          </div>
+          <div id="banco-rejilla"></div>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Desde esta computadora</div>
+          <button class="est-boton est-boton--borde ancho" id="b-subir-2"><i class="ico" data-ico="subir"></i>Abrir archivo…</button>
+          <label class="est-fila" style="margin-top:8px"><input type="checkbox" id="subir-al-banco" checked>
+            <span class="est-nota">Guardar también la foto en el banco (y en la Fototeca, si el estudio está integrado)</span></label>
+        </div>
+      </section>
+
+      <!-- ================= SELECCIÓN ================= -->
+      <section class="vista" id="v-seleccion" data-titulo="Selección">
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Herramientas</div>
+          <div class="fila-botones" id="sel-herramientas">
+            <button class="est-boton est-boton--borde" data-sel="rect" title="Rectángulo (M)"><i class="ico" data-ico="seleccion"></i>Rectángulo</button>
+            <button class="est-boton est-boton--borde" data-sel="elipse" title="Elipse (M otra vez)"><i class="ico" data-ico="formas"></i>Elipse</button>
+            <button class="est-boton est-boton--borde" data-sel="lazo" title="Lazo libre (L): arrastre alrededor"><i class="ico" data-ico="pluma"></i>Lazo</button>
+            <button class="est-boton est-boton--borde" data-sel="poligono" title="Lazo poligonal (L otra vez): clic por vértice; doble clic, Intro o clic en el primer punto cierra"><i class="ico" data-ico="zonas"></i>Lazo poligonal</button>
+            <button class="est-boton est-boton--borde" data-sel="varita" title="Varita mágica (W): elige píxeles de color parecido"><i class="ico" data-ico="varita"></i>Varita mágica</button>
+            <button class="est-boton est-boton--borde" id="b-sel-soltar" title="Vuelve a las herramientas del lienzo"><i class="ico" data-ico="cerrar"></i>Soltar herramienta</button>
+          </div>
+          <div class="est-fila" style="margin-top:8px"><label>Modo</label>
+            <div class="est-segmentado" id="sel-modo">
+              <button class="on" data-modo="nueva" title="Selección nueva">Nueva</button>
+              <button data-modo="sumar" title="Añadir (Mayús)">Añadir</button>
+              <button data-modo="restar" title="Restar (Alt)">Restar</button>
+              <button data-modo="intersecar" title="Intersecar (Mayús+Alt)">Intersecar</button>
+            </div>
+          </div>
+          <label class="deslizador">Calado<input type="range" id="sel-calado" min="0" max="80" value="0"><output>0 px</output></label>
+          <label class="deslizador">Tolerancia<input type="range" id="sel-tolerancia" min="0" max="255" value="32"><output>32</output></label>
+          <label class="est-fila"><input type="checkbox" id="sel-contigua" checked><span class="est-nota">Varita: solo píxeles contiguos</span></label>
+          <label class="est-fila"><input type="checkbox" id="sel-todas"><span class="est-nota">Varita: muestrear todas las capas visibles</span></label>
+          <p class="est-nota">Mayús añade, Alt resta, Mayús+Alt interseca. Esc cancela el trazo; Ctrl+D quita la selección.</p>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Selección <span class="est-insignia" id="sel-medida">sin selección</span></div>
+          <div class="fila-botones">
+            <button class="est-boton est-boton--borde" id="b-sel-todo"><i class="ico" data-ico="ajustar"></i>Todo (Ctrl+A)</button>
+            <button class="est-boton est-boton--borde" id="b-sel-nada"><i class="ico" data-ico="cerrar"></i>Quitar (Ctrl+D)</button>
+            <button class="est-boton est-boton--borde" id="b-sel-invertir"><i class="ico" data-ico="refrescar"></i>Invertir (Ctrl+Mayús+I)</button>
+            <button class="est-boton est-boton--borde" id="b-sel-calar" title="Suaviza el borde de la selección actual con el calado elegido"><i class="ico" data-ico="mejora"></i>Calar el borde</button>
+          </div>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Dentro de la selección · capa activa</div>
+          <div class="fila-botones">
+            <button class="est-boton est-boton--borde" id="b-sel-rellenar"><i class="ico" data-ico="paleta"></i>Rellenar con el color</button>
+            <button class="est-boton est-boton--borde" id="b-sel-borrar"><i class="ico" data-ico="papelera"></i>Borrar (Supr)</button>
+            <button class="est-boton est-boton--borde" id="b-sel-copiar"><i class="ico" data-ico="copiar"></i>Copiar (Ctrl+C)</button>
+            <button class="est-boton est-boton--borde" id="b-sel-capa"><i class="ico" data-ico="capas"></i>Copiar a capa nueva</button>
+            <button class="est-boton est-boton--borde" id="b-sel-cortar"><i class="ico" data-ico="cortar"></i>Cortar a capa nueva</button>
+          </div>
+          <p class="est-nota">Con una selección activa, los ajustes (niveles, curvas, brillo y color), los filtros y las
+            herramientas que pintan píxeles (tampón, borrador, desenfocar, relleno) solo cambian lo seleccionado; los
+            trazos de pincel y lápiz quedan recortados por la selección vigente al empezar la capa.</p>
+        </div>
+      </section>
+
+      <!-- ================= FORMATO ================= -->
+      <section class="vista" id="v-formato" data-titulo="Formato, recorte y giro">
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Formato para redes</div>
+          <div class="est-fila"><label>Encuadre</label>
+            <div class="est-segmentado" id="modo-encuadre">
+              <button class="on" data-modo="cubrir" title="La foto llena todo el lienzo (se recorta lo que sobra)">Cubrir</button>
+              <button data-modo="contener" title="La foto entra completa (quedan franjas)">Contener</button>
+            </div>
+          </div>
+          <div id="formatos"></div>
+          <p class="est-nota">El lienzo toma el tamaño y la foto activa se encuadra al centro; muévala con la herramienta
+            «Seleccionar objeto» para elegir el encuadre. Deshacer devuelve el lienzo, no el encuadre.</p>
+          <div class="est-fila"><label>A medida</label>
+            <input class="est-campo" id="medida-w" type="number" min="16" max="10000" value="1080" style="width:72px" aria-label="Ancho en píxeles">
+            <span class="est-nota">×</span>
+            <input class="est-campo" id="medida-h" type="number" min="16" max="10000" value="1080" style="width:72px" aria-label="Alto en píxeles">
+            <button class="est-boton est-boton--sm est-boton--borde" id="b-medida">Aplicar</button>
+          </div>
+          <button class="est-boton est-boton--borde ancho" id="b-encuadrar"><i class="ico" data-ico="ajustar"></i>Encuadrar la capa activa en el lienzo</button>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Recortar, girar y tamaño</div>
+          <div class="fila-botones">
+            <button class="est-boton est-boton--borde" data-herramienta="crop"><i class="ico" data-ico="recorte"></i>Recortar</button>
+            <button class="est-boton est-boton--borde" data-modulo="image/trim.trim"><i class="ico" data-ico="zonas"></i>Recorte automático</button>
+            <button class="est-boton est-boton--borde" data-modulo="image/rotate.left"><i class="ico" data-ico="deshacer"></i>Girar 90° izq.</button>
+            <button class="est-boton est-boton--borde" data-modulo="image/rotate.right"><i class="ico" data-ico="rehacer"></i>Girar 90° der.</button>
+            <button class="est-boton est-boton--borde" data-modulo="image/rotate.rotate"><i class="ico" data-ico="refrescar"></i>Girar libre…</button>
+            <button class="est-boton est-boton--borde" data-voltear="horizontal"><i class="ico" data-ico="regla"></i>Voltear horiz.</button>
+            <button class="est-boton est-boton--borde" data-voltear="vertical"><i class="ico" data-ico="regla"></i>Voltear vert.</button>
+            <button class="est-boton est-boton--borde" data-modulo="image/resize.resize"><i class="ico" data-ico="ajustar"></i>Redimensionar…</button>
+            <button class="est-boton est-boton--borde" data-modulo="image/size.size"><i class="ico" data-ico="marco"></i>Tamaño del lienzo…</button>
+            <button class="est-boton est-boton--borde" data-modulo="view/guides.insert"><i class="ico" data-ico="cuadricula"></i>Guías…</button>
+          </div>
+          <div class="est-fila" style="margin-top:8px"><label>Con selección, voltear</label>
+            <div class="est-segmentado" id="modo-voltear">
+              <button class="on" data-modo="seleccion" title="Solo lo seleccionado, reflejado dentro de su caja">La selección</button>
+              <button data-modo="capa" title="La capa entera, aunque haya selección">Toda la capa</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= TONO ================= -->
+      <section class="vista" id="v-tono" data-titulo="Tono, ajustes y filtros">
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Niveles y curvas · capa activa</div>
+          <canvas id="tono-vista" width="560" height="300" class="est-lienzo"></canvas>
+          <canvas id="histograma" width="560" height="112"></canvas>
+          <div style="margin-top:8px">
+            <label class="deslizador">Negro<input type="range" id="t-negro" min="0" max="250" value="0"><output>0</output></label>
+            <label class="deslizador">Gamma<input type="range" id="t-gamma" min="20" max="300" value="100"><output>1,00</output></label>
+            <label class="deslizador">Blanco<input type="range" id="t-blanco" min="5" max="255" value="255"><output>255</output></label>
+          </div>
+          <div class="fila-botones" style="margin-top:6px">
+            <button class="est-boton est-boton--borde" id="b-tono-auto" title="Negro y blanco al 0,5 % de los extremos del histograma"><i class="ico" data-ico="mejora"></i>Automático</button>
+            <button class="est-boton est-boton--borde" id="b-tono-cero"><i class="ico" data-ico="refrescar"></i>Restablecer</button>
+            <button class="est-boton est-boton--borde" id="b-curvas" title="Curvas por canal con puntos arrastrables"><i class="ico" data-ico="pluma"></i>Curvas…</button>
+          </div>
+          <label class="est-fila" style="margin-top:6px"><input type="checkbox" id="t-vista" checked><span class="est-nota">Vista previa en el lienzo</span></label>
+          <button class="est-boton est-boton--primario ancho" id="b-tono-aplicar" style="margin-top:6px"><i class="ico" data-ico="hecho"></i>Aplicar a la capa</button>
+          <p class="est-nota" id="tono-nota">La vista previa es de la capa activa; aplicar se deshace con Ctrl+Z.</p>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Ajustes</div>
+          <div class="fila-botones">
+            <button class="est-boton est-boton--borde" data-modulo="image/color_corrections.color_corrections"><i class="ico" data-ico="ajustes"></i>Brillo, contraste, color…</button>
+            <button class="est-boton est-boton--borde" data-modulo="image/auto_adjust.auto_adjust"><i class="ico" data-ico="mejora"></i>Ajuste automático</button>
+            <button class="est-boton est-boton--borde" data-modulo="effects/vibrance.vibrance"><i class="ico" data-ico="paleta"></i>Intensidad…</button>
+            <button class="est-boton est-boton--borde" data-modulo="effects/black_and_white.black_and_white"><i class="ico" data-ico="fondo"></i>Blanco y negro…</button>
+            <button class="est-boton est-boton--borde" data-modulo="image/histogram.histogram"><i class="ico" data-ico="cuadricula"></i>Histograma</button>
+            <button class="est-boton est-boton--borde" data-modulo="tools/replace_color.replace_color"><i class="ico" data-ico="pluma"></i>Reemplazar color…</button>
+          </div>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Filtros</div>
+          <div class="fila-botones">
+            <button class="est-boton est-boton--borde" data-modulo="effects/common/blur.blur"><i class="ico" data-ico="ojo-cerrado"></i>Desenfocar…</button>
+            <button class="est-boton est-boton--borde" data-modulo="effects/sharpen.sharpen"><i class="ico" data-ico="ojo"></i>Enfocar…</button>
+            <button class="est-boton est-boton--borde" data-modulo="effects/denoise.denoise"><i class="ico" data-ico="mejora"></i>Reducir ruido…</button>
+            <button class="est-boton est-boton--borde" data-modulo="effects/vignette.vignette"><i class="ico" data-ico="zonas"></i>Viñeta…</button>
+            <button class="est-boton est-boton--borde" data-modulo="effects/tilt_shift.tilt_shift"><i class="ico" data-ico="regla"></i>Desenfoque de enfoque…</button>
+            <button class="est-boton est-boton--borde" data-modulo="effects/browser.browser"><i class="ico" data-ico="vista-previa"></i>Más filtros…</button>
+          </div>
+          <p class="est-nota">Todos los efectos del motor están también en su menú «Efectos». Herramientas de retoque en
+            la barra izquierda del lienzo: tampón de clonar, desenfocar, enfocar, desaturar y borrador.</p>
+        </div>
+      </section>
+
+      <!-- ================= MARCA ================= -->
+      <section class="vista" id="v-marca" data-titulo="Marca">
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Paleta de la marca</div>
+          <div id="paleta"></div>
+          <p class="est-nota">Clic: color activo de pinceles, formas y texto. También quedan en las muestras del panel Colores.</p>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Marcos</div>
+          <div class="rejilla-2" id="marcos"></div>
+          <p class="est-nota" id="marcos-nota">El marco entra como capa superior; si el lienzo tiene otro tamaño, toma el del marco.</p>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Logos</div>
+          <div class="rejilla-2" id="logos"></div>
+          <p class="est-nota" id="logos-nota">El logo entra como capa en la esquina inferior derecha; se mueve y escala con la herramienta «Seleccionar objeto».</p>
+        </div>
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Texto</div>
+          <button class="est-boton est-boton--borde ancho" data-herramienta="text"><i class="ico" data-ico="texto"></i>Herramienta de texto</button>
+          <div id="tipografias" class="tipografias"></div>
+          <p class="est-nota" id="tipografias-nota">Las tipografías del perfil y las que el servidor del estudio tiene
+            (las de la marca primero) están en la lista de fuentes del texto; clic en una para usarla. Sin red: no se
+            buscan fuentes en internet.</p>
+        </div>
+      </section>
+
+      <!-- ================= CAPAS ================= -->
+      <section class="vista" id="v-capas" data-titulo="Capas">
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Capa activa</div>
+          <div class="est-fila"><label>Nombre</label><span id="capa-nombre" class="est-nota">—</span></div>
+          <label class="deslizador">Opacidad<input type="range" id="capa-opacidad" min="0" max="100" value="100"><output>100</output></label>
+          <div class="fila-botones">
+            <button class="est-boton est-boton--borde" data-modulo="layer/new.new"><i class="ico" data-ico="mas"></i>Nueva capa</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/duplicate.duplicate"><i class="ico" data-ico="copiar"></i>Duplicar</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/move.up"><i class="ico" data-ico="flecha-arriba"></i>Subir</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/move.down"><i class="ico" data-ico="flecha-abajo"></i>Bajar</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/composition.composition"><i class="ico" data-ico="capas"></i>Modo de fusión…</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/rename.rename"><i class="ico" data-ico="pluma"></i>Renombrar…</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/visibility.toggle"><i class="ico" data-ico="ojo"></i>Mostrar / ocultar</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/raster.raster" title="Convierte texto o forma en píxeles (para niveles, filtros y pinceles)"><i class="ico" data-ico="imagen"></i>Rasterizar</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/merge.merge"><i class="ico" data-ico="flecha-abajo"></i>Combinar abajo</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/flatten.flatten"><i class="ico" data-ico="capas"></i>Acoplar todo</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/new.new_selection"><i class="ico" data-ico="seleccion"></i>Capa de la selección</button>
+            <button class="est-boton est-boton--borde" data-modulo="layer/delete.delete"><i class="ico" data-ico="papelera"></i>Eliminar</button>
+          </div>
+          <p class="est-nota">La lista de capas (orden, visibilidad, detalles) está en el panel derecho del lienzo.</p>
+        </div>
+      </section>
+
+      <!-- ================= PROYECTOS ================= -->
+      <section class="vista" id="v-proyectos" data-titulo="Proyectos">
+        <div class="est-seccion">
+          <div class="est-seccion__titulo">Guardar</div>
+          <input class="est-campo ancho" id="proyecto-nombre" placeholder="Nombre del proyecto" maxlength="80">
+          <div class="fila-botones" style="margin-top:6px">
+            <button class="est-boton est-boton--primario" id="b-proyecto-guardar"><i class="ico" data-ico="guardar"></i>Guardar</button>
+            <button class="est-boton est-boton--borde" id="b-proyecto-bajar" title="Descarga el proyecto (.json con capas)"><i class="ico" data-ico="descargar"></i>Descargar</button>
+          </div>
+          <p class="est-nota">El proyecto conserva capas, textos editables y guías (formato de miniPaint, .json).</p>
+        </div>
+        <div class="est-seccion">
+          <div class="est-fila" style="margin-bottom:6px"><span class="est-seccion__titulo" style="margin:0">Guardados</span>
+            <span class="est-empuje"></span>
+            <button class="est-boton est-boton--sm" id="b-proyectos-refrescar"><i class="ico ico--sm" data-ico="refrescar"></i></button></div>
+          <div id="proyectos"></div>
+          <button class="est-boton est-boton--borde ancho" id="b-proyecto-abrir-local" style="margin-top:6px"><i class="ico" data-ico="carpeta"></i>Abrir un .json de esta computadora…</button>
+        </div>
+      </section>
+
+    </div>
+  </aside>
+
+  <div id="lienzo-pozo">
+    <iframe id="lienzo" title="Lienzo del editor de fotos" src="foto-lienzo.html?lang=es"></iframe>
+    <div id="cargando">Cargando el lienzo…</div>
+  </div>
+</div>
+
+<footer class="est-estado">
+  <span id="estado-servidor"><span class="punto"></span><b id="estado-servidor-txt">Sin servidor</b></span>
+  <span id="estado-fototeca" hidden><i class="ico ico--sm" data-ico="exito"></i>Fototeca</span>
+  <span>Lienzo <b id="estado-dim">—</b></span>
+  <span>Capas <b id="estado-capas">—</b></span>
+  <span>Activa <b id="estado-activa">—</b></span>
+  <span>Zoom <b id="estado-zoom">—</b></span>
+  <span id="estado-sel" hidden><i class="ico ico--sm" data-ico="seleccion"></i>Selección <b id="estado-sel-txt">—</b></span>
+  <span>Herramienta de selección <b id="estado-herr">del lienzo</b></span>
+  <span class="est-empuje"></span>
+  <span><kbd>Ctrl</kbd>+<kbd>S</kbd> proyecto · <kbd>Ctrl</kbd>+<kbd>E</kbd> exportar</span>
+</footer>
+
+<!-- ================= EXPORTAR ================= -->
+<div class="est-modal-fondo" id="m-exportar" role="dialog" aria-modal="true" aria-labelledby="m-exportar-t">
+  <div class="est-modal">
+    <h3 id="m-exportar-t">Exportar la imagen</h3>
+    <div class="est-fila"><label for="x-titulo">Título</label><input class="est-campo" id="x-titulo" style="flex:1" maxlength="160"></div>
+    <div class="est-fila"><label>Formato</label>
+      <div class="est-segmentado" id="x-formato">
+        <button class="on" data-f="jpg">JPG</button><button data-f="png">PNG</button><button data-f="webp">WebP</button>
+      </div>
+    </div>
+    <label class="deslizador" id="x-calidad-fila">Calidad<input type="range" id="x-calidad" min="40" max="100" value="90"><output>90</output></label>
+    <div class="est-fila"><label for="x-escala">Escala</label>
+      <select class="est-campo" id="x-escala"><option value="1">100 %</option><option value="0.5">50 %</option><option value="2">200 %</option></select>
+      <span class="est-nota" id="x-medida">—</span>
+    </div>
+    <div class="est-fila"><label for="x-canal">Canal</label>
+      <select class="est-campo" id="x-canal" style="flex:1">
+        <option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option>
+        <option value="estados">Estados</option><option value="x">X</option><option value="youtube">YouTube</option><option value="linkedin">LinkedIn</option>
+      </select>
+    </div>
+    <p class="est-nota">«Guardar en la salida» deja la imagen en la carpeta de redes del canal y en el banco. Las
+      zonas transparentes salen blancas en JPG.</p>
+    <div class="acciones">
+      <button class="est-boton" id="x-cancelar">Cancelar</button>
+      <button class="est-boton est-boton--borde" id="x-descargar"><i class="ico" data-ico="descargar"></i>Descargar</button>
+      <button class="est-boton est-boton--borde" id="x-salida"><i class="ico" data-ico="carpeta"></i>Guardar en la salida</button>
+      <button class="est-boton est-boton--primario" id="x-fototeca" hidden title="La imagen queda en la Fototeca del sistema, álbum «Piezas de prensa»"><i class="ico" data-ico="imagen"></i>Guardar en la Fototeca</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= CURVAS ================= -->
+<div class="est-modal-fondo" id="m-curvas" role="dialog" aria-modal="true" aria-labelledby="m-curvas-t">
+  <div class="est-modal" style="width:min(400px,94vw)">
+    <h3 id="m-curvas-t">Curvas</h3>
+    <div class="est-fila"><label>Canal</label>
+      <div class="est-segmentado" id="curvas-canal">
+        <button class="on" data-canal="rgb">RGB</button><button data-canal="r">Rojo</button><button data-canal="g">Verde</button><button data-canal="b">Azul</button>
+      </div>
+    </div>
+    <canvas id="curvas-lienzo" width="512" height="512" aria-label="Editor de la curva: clic añade un punto, arrastre lo mueve, doble clic o arrastrar fuera lo quita"></canvas>
+    <div class="est-fila" style="margin-top:6px"><span class="est-nota" id="curvas-lectura">Clic añade un punto · arrastre lo mueve · doble clic o arrastrar fuera lo quita</span></div>
+    <div class="acciones">
+      <button class="est-boton" id="curvas-canal-cero">Restablecer canal</button>
+      <span class="est-empuje"></span>
+      <button class="est-boton" id="curvas-cancelar">Cancelar</button>
+      <button class="est-boton est-boton--borde" id="curvas-aceptar" title="Conserva la curva en la vista previa sin aplicarla todavía">Aceptar</button>
+      <button class="est-boton est-boton--primario" id="curvas-aplicar"><i class="ico" data-ico="hecho"></i>Aplicar a la capa</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="archivo-imagen" accept="image/*" hidden>
+<input type="file" id="archivo-proyecto" accept=".json,application/json" hidden>
+<div class="est-toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+/* ---------------- utilidades ---------------- */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+/* Rutas RELATIVAS a esta página: sirve en la raíz (http://127.0.0.1:8099/foto.html) o bajo una carpeta detrás
+   de un proxy (/estudio/foto.html). api("/api/x") → "<carpeta de la página>/api/x". */
+const BASE = location.pathname.replace(/[^/]*$/, "");
+const api = p => BASE + String(p).replace(/^\//, "");
+const esc = t => String(t ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const espera = ms => new Promise(r => setTimeout(r, ms));
+/** Valor de un token del tema (estudio-tema.css), p. ej. token("--est-texto"). */
+const token = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function toast(msg, ms = 2800){ const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), ms); }
+async function pedirJSON(ruta, opciones){
+  const r = await fetch(api(ruta), {cache: "no-store", ...(opciones || {})});
+  const d = await r.json().catch(() => ({}));
+  if(!r.ok || d.ok === false) throw new Error(d.error || d.detail || ("HTTP " + r.status));
+  return d;
+}
+const postJSON = (ruta, cuerpo) => pedirJSON(ruta, {method: "POST", headers: {"Content-Type": "application/json"},
+  body: JSON.stringify(cuerpo)});
+/* Una URL del servidor con el prefijo de la página: «/banco/x.jpg» → «/estudio/banco/x.jpg» bajo Qillqa. */
+function conPrefijo(url){
+  url = String(url || "");
+  if(!url.startsWith("/") || url.startsWith(BASE) || BASE === "/") return url;
+  return api(url);
+}
+function cargarImagen(src){
+  return new Promise((ok, mal) => { const im = new Image(); im.crossOrigin = "anonymous";
+    im.onload = () => ok(im); im.onerror = () => mal(new Error("No se pudo leer la imagen")); im.src = src; });
+}
+const leerComoDataURL = blob => new Promise((ok, mal) => { const fr = new FileReader();
+  fr.onload = () => ok(fr.result); fr.onerror = mal; fr.readAsDataURL(blob); });
+function descargar(href, nombre){ const a = document.createElement("a"); a.href = href; a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove(); }
+function nombreArchivo(t){ return (String(t || "foto").normalize("NFKD").replace(/[̀-ͯ]/g, "")
+  .toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "foto").slice(0, 80); }
+const hoy = () => new Date().toLocaleDateString("es-PE");
+
+/* ---------------- estado ---------------- */
+const E = {
+  servidor: false, salud: {}, diseno: null,
+  banco: [],                       // [{name, url, credito, carpeta}] (banco + Fototeca bajo Qillqa)
+  origenes: new Set(),             // URL de las fotos abiertas (pie de la pieza en la Fototeca)
+  fotos: new Set(),                // n.º de la Fototeca de las fotos abiertas
+  titulo: "",                      // nombre del trabajo (proyecto o primera foto)
+  modoAbrir: "documento", encuadre: "cubrir", formatoX: "jpg", selModo: "nueva", voltear: "seleccion",
+  tipografias: [],                 // /api/fuentes: [{familia, peso, cursiva, url, marca, origen}]
+};
+
+/* ================= el motor (miniPaint en el marco) ================= */
+const MP = (() => {
+  const marco = $("#lienzo");
+  const w = () => marco.contentWindow;
+  let listo = null;
+  /* Correcciones de la traducción española del paquete (claves en inglés del motor). */
+  const CORRECCIONES = {"Hex": "Hex", "Pressure": "Presión", "Preview": "Vista previa", "Layers": "Capas",
+    "Colors": "Colores", "Information": "Información", "Layer details": "Detalles de la capa", "Font": "Fuente",
+    "Selection": "Selección rectangular", "Brush": "Pincel", "Pick color": "Cuentagotas", "Erase": "Borrador",
+    "Line": "Línea", "Rectangle": "Rectángulo", "Ellipse": "Elipse", "Triangle": "Triángulo",
+    "Right triangle": "Triángulo rectángulo", "Romb": "Rombo", "Parallelogram": "Paralelogramo", "Trapezoid": "Trapecio",
+    "Plus": "Cruz", "Pentagon": "Pentágono", "Hexagon": "Hexágono", "Star": "Estrella", "Heart": "Corazón",
+    "Cylinder": "Cilindro", "Human": "Persona", "Tear": "Gota", "Cog": "Engranaje", "Bezier curve": "Curva Bézier",
+    "Moon": "Luna", "Callout": "Globo de diálogo", "Polygon": "Polígono", "Text": "Texto", "Gradient": "Degradado",
+    "Clone": "Tampón de clonar", "Crop": "Recortar", "Blur": "Desenfocar", "Sharpen": "Enfocar",
+    "Desaturate": "Desaturar", "Animation": "Animación", "Denoise": "Reducir ruido", "Composition": "Modo de fusión"};
+
+  function esperar(){
+    if(listo) return listo;
+    listo = (async () => {
+      for(let i = 0; i < 400; i++){
+        const v = w();
+        if(v && v.Layers && v.AppConfig && v.AppConfig.layer && v.Layers.Base_gui && v.Layers.Base_gui.modules) break;
+        await espera(50);
+      }
+      const v = w();
+      if(!v || !v.Layers) throw new Error("El lienzo no cargó");
+      preparar(v);
+      $("#cargando").remove();
+      return v;
+    })();
+    return listo;
+  }
+
+  function preparar(v){
+    const gui = v.Layers.Base_gui;
+    // traducción: correcciones y re-traducción de lo ya pintado
+    try{
+      const tr = gui.Tools_translate;
+      for(const [en, es] of Object.entries(CORRECCIONES)){
+        tr.translations[en] = Object.assign({en}, tr.translations[en] || {}, {es});
+      }
+      tr.translate("es");
+    }catch(_){}
+    // sin red: la búsqueda de imágenes (Pixabay) y la de fuentes de Google se reemplazan por el banco y la marca
+    const aviso = () => toast("Use el banco de fotos del panel izquierdo");
+    try{ gui.modules["file/open"].search = aviso; }catch(_){}
+    // …y sus entradas no se muestran: «Buscar imágenes» del menú Archivo (el menú se pinta desde su plantilla de
+    // ítem: un ítem vacío no ocupa lugar y los demás conservan su índice) y «[Add Font...]» de la lista de fuentes.
+    try{
+      const menu = gui.GUI_menu, plantilla = menu.generate_menu_dropdown_item_template;
+      menu.generate_menu_dropdown_item_template = function(item){
+        return item && /^file\/open\.search$|^tools\/media|^image\/search/.test(item.target || "") ? "" : plantilla.apply(this, arguments);
+      };
+    }catch(_){}
+    fuentesTexto(v, []);
+    // color de marca desde el arranque (texto, formas y pinceles), sin esperar a /api/design: sale de los tokens
+    const marca = token("--puka-600");
+    if(marca){
+      try{ const t = v.AppConfig.TOOLS.find(x => x.name === "text"); if(t) t.attributes.fill = marca; }catch(_){}
+      try{ gui.GUI_colors.set_color({hex: marca}); }catch(_){}
+      try{ gui.GUI_tools.show_action_attributes(); }catch(_){}
+    }
+    // selección del estudio (máscara) impuesta a las acciones del motor
+    Sel.instalar(v);
+    // atajos del estudio también con el foco en el lienzo
+    v.document.addEventListener("keydown", atajos, true);
+  }
+  /** Acción propia con deshacer en el historial del motor (misma forma que sus acciones). */
+  function accion(id, nombre, hacer, deshacer){
+    return {action_id: id, action_description: nombre, is_done: false, memory_estimate: 0, database_estimate: 0,
+      async do(){ this.is_done = true; await hacer(); render(); },
+      async undo(){ this.is_done = false; await deshacer(); render(); },
+      free(){}};
+  }
+  const hacer = a => w().State.do_action(a);
+  const props = l => ({x: l.x, y: l.y, width: l.width, height: l.height});
+  function ponerCapa(id, p){ const l = w().Layers.get_layer(id); if(l) Object.assign(l, p); }
+  function ponerLienzo(ancho, alto){
+    cfg().WIDTH = ancho; cfg().HEIGHT = alto; gui().prepare_canvas();
+    try{ gui().GUI_information.show_size(true); }catch(_){}
+    Sel.actualizar();
+  }
+  /** Posición y tamaño que encajan una capa con imagen en un lienzo (cubrir o contener), centrada. */
+  function encaje(capa, W, H, modo){
+    const k = (modo === "contener" ? Math.min : Math.max)(W / capa.width_original, H / capa.height_original);
+    const width = Math.round(capa.width_original * k), height = Math.round(capa.height_original * k);
+    return {x: Math.round((W - width) / 2), y: Math.round((H - height) / 2), width, height};
+  }
+
+  const gui = () => w().Layers.Base_gui;
+  const cfg = () => w().AppConfig;
+  /** Ejecuta una acción de menú del motor: «image/rotate.left». */
+  function modulo(destino, param){
+    const [clave, fn] = destino.split(".");
+    const m = gui().modules[clave];
+    if(!m || typeof m[fn] !== "function"){ toast("Acción no disponible: " + destino); return; }
+    return m[fn](param ?? null);
+  }
+  function herramienta(nombre){
+    const el = w().document.getElementById(nombre);
+    if(el){ el.click(); marco.focus(); } else toast("Herramienta no disponible: " + nombre);
+  }
+  function render(){ cfg().need_render = true; try{ w().Layers.refresh_gui(); }catch(_){} }
+
+  /** Cambia el tamaño del lienzo (acción del motor, se deshace). */
+  async function tamanoLienzo(ancho, alto){
+    gui().modules["image/size"].size_handler({w: ancho, h: alto, resolution: "Custom", in_proportion: false,
+      enable_autoresize: false});
+    await espera(30);
+  }
+  /** Encaja una capa con imagen en el lienzo (cubrir o contener), centrada; se deshace. */
+  function encuadrar(capa, modo){
+    capa = capa || cfg().layer;
+    if(!capa || capa.width_original == null){ toast("La capa activa no tiene una imagen que encuadrar"); return; }
+    const antes = props(capa), despues = encaje(capa, cfg().WIDTH, cfg().HEIGHT, modo), id = capa.id;
+    return hacer(accion("estudio_encuadre", "Encuadrar capa", () => ponerCapa(id, despues), () => ponerCapa(id, antes)));
+  }
+  /** Inserta una imagen como capa nueva (acción del motor, se deshace). */
+  async function insertarImagen(img, nombre, caja){
+    const W = img.naturalWidth || img.width, H = img.naturalHeight || img.height;
+    const c = caja || {x: 0, y: 0, width: W, height: H};
+    await w().Layers.insert({name: nombre, type: "image", data: img, x: c.x, y: c.y, width: c.width, height: c.height,
+      width_original: W, height_original: H});
+    render();
+  }
+  /** Documento nuevo del tamaño de la imagen, con la imagen como única capa. */
+  async function abrirDocumento(img, nombre){
+    await w().Layers.reset_layers(true);
+    await tamanoLienzo(img.naturalWidth, img.naturalHeight);
+    await insertarImagen(img, nombre);
+    modulo("view/zoom.auto");
+  }
+  /** Lienzo aplanado (todas las capas visibles) en un canvas de esta página. */
+  function aplanado(escala, fondo){
+    const W = cfg().WIDTH, H = cfg().HEIGHT;
+    const base = document.createElement("canvas"); base.width = W; base.height = H;
+    w().Layers.convert_layers_to_canvas(base.getContext("2d"), null, false);
+    const s = escala || 1;
+    const c = document.createElement("canvas"); c.width = Math.round(W * s); c.height = Math.round(H * s);
+    const x = c.getContext("2d");
+    if(fondo){ x.fillStyle = fondo; x.fillRect(0, 0, c.width, c.height); }
+    x.imageSmoothingQuality = "high"; x.drawImage(base, 0, 0, c.width, c.height);
+    return c;
+  }
+  /** JSON del proyecto (el de miniPaint). Las capas de pincel o lápiz recortadas por una selección llevan la
+      máscara en una propiedad interna que el motor no guarda: se guardan rasterizadas (imagen del lienzo con el
+      recorte ya aplicado), para que el proyecto se reabra igual. */
+  function proyectoJSON(){
+    const v = w(), datos = JSON.parse(v.FileSave.export_as_json());
+    const W = cfg().WIDTH, H = cfg().HEIGHT;
+    for(const capa of cfg().layers){
+      if(!capa._estudio_mascara) continue;
+      const i = (datos.layers || []).findIndex(l => l.id === capa.id); if(i < 0) continue;
+      const c = document.createElement("canvas"); c.width = W; c.height = H;
+      const guardado = {opacity: capa.opacity, filters: capa.filters, visible: capa.visible};
+      Object.assign(capa, {opacity: 100, filters: [], visible: true});      // opacidad y filtros quedan en la capa
+      try{ v.Layers.render_object(c.getContext("2d"), capa); } finally { Object.assign(capa, guardado); }
+      datos.layers[i] = Object.assign({}, datos.layers[i], {type: "image", x: 0, y: 0, width: W, height: H,
+        width_original: W, height_original: H, rotate: 0, data: null, params: {}, render_function: null,
+        is_vector: false, name: datos.layers[i].name || "Pincel"});
+      datos.data = (datos.data || []).filter(d => d.id !== capa.id).concat({id: capa.id, data: c.toDataURL("image/png")});
+    }
+    return datos;
+  }
+  async function abrirProyecto(datos){ await w().FileOpen.load_json(datos); modulo("view/zoom.auto"); }
+  /** [familia, url, descriptores] de cada archivo: con su familia tipográfica y, si difiere, la de legado
+      («Archivo Black»), como las ve fontconfig. */
+  function caras(lista){
+    return lista.flatMap(f => [[f.familia, f.url, {weight: String(f.peso || 400), style: f.cursiva ? "italic" : "normal"}],
+      ...(f.familia_legado ? [[f.familia_legado, f.url, {weight: String(f.peso || 400), style: f.cursiva ? "italic" : "normal"}]] : [])]);
+  }
+  const SISTEMA = ["Arial", "Helvetica", "Verdana", "Tahoma", "Times New Roman", "Courier", "Impact", "Monospace"];
+  /** Lista de fuentes de la herramienta de texto: las del estudio (marca primero) y las del sistema, sin
+      «[Add Font...]» (buscaba en Google Fonts, fuera de la red permitida). */
+  function fuentesTexto(v, familias){
+    v.AppConfig.FONTS.splice(0, v.AppConfig.FONTS.length, ...familias, ...SISTEMA.filter(f => !familias.includes(f)));
+    try{
+      const t = v.AppConfig.TOOLS.find(x => x.name === "text");
+      t.attributes.font.values = () => ["", ...v.AppConfig.FONTS];
+    }catch(_){}
+    try{ v.Layers.Base_gui.GUI_tools.show_action_attributes(); }catch(_){}   // la barra de atributos ya pintada
+  }
+  /** Registra en el marco las tipografías de /api/fuentes (archivo, familia, peso, cursiva) y las pone primero en
+      la lista de fuentes del texto: las de la marca, luego el resto del perfil y las del servidor. */
+  async function fuentes(lista){
+    const v = w(); if(!lista || !lista.length) return [];
+    const cargas = caras(lista).map(([familia, url, desc]) => new v.FontFace(familia, `url("${conPrefijo(url)}")`, desc)
+      .load().then(x => { v.document.fonts.add(x); return familia; }).catch(() => null));
+    const ok = new Set((await Promise.all(cargas)).filter(Boolean));
+    const orden = [...lista].sort((a, b) => (b.marca - a.marca) || a.familia.localeCompare(b.familia, "es"));
+    // en la lista: las familias tipográficas y, de las de legado, solo las que pide la marca («Archivo Black»)
+    const pedidas = new Set(Object.values(E.familiasMarca || {}));
+    const familias = [...new Set(orden.flatMap(f => [f.familia, pedidas.has(f.familia_legado) ? f.familia_legado : null])
+      .filter(f => f && ok.has(f)))];
+    fuentesTexto(v, familias);
+    return familias;
+  }
+  /** Fija la fuente de la herramienta de texto (y del texto seleccionado, si lo hay). */
+  function usarFuente(familia){
+    const v = w();
+    try{
+      const t = v.AppConfig.TOOLS.find(x => x.name === "text"); t.attributes.font.value = familia;
+      if(v.AppConfig.TOOL.name !== "text") herramienta("text");
+      gui().GUI_tools.show_action_attributes();
+      const sel = v.document.querySelector("#action_attributes select#font");
+      if(sel){ sel.value = familia; sel.dispatchEvent(new Event("change")); }
+    }catch(_){}
+  }
+  return {esperar, w, gui, cfg, modulo, herramienta, render, tamanoLienzo, encuadrar, insertarImagen,
+    accion, hacer, props, ponerCapa, ponerLienzo, encaje,
+    abrirDocumento, aplanado, proyectoJSON, abrirProyecto, fuentes, usarFuente, caras};
+})();
+
+/* ================= servidor ================= */
+async function detectarServidor(){
+  try{
+    const r = await fetch(api("/api/health"), {cache: "no-store"});
+    E.servidor = r.ok; E.salud = r.ok ? await r.json().catch(() => ({})) : {};
+  }catch(_){ E.servidor = false; E.salud = {}; }
+  const fototeca = E.servidor && E.salud.fototeca === true;
+  $("#estado-servidor").classList.toggle("vivo", E.servidor);
+  $("#estado-servidor-txt").textContent = E.servidor ? "Servidor conectado" : "Sin servidor";
+  $("#estado-fototeca").hidden = !fototeca;
+  $("#x-fototeca").hidden = !fototeca;
+  $("#x-salida").hidden = !E.servidor;
+}
+const conFototeca = () => E.servidor && E.salud.fototeca === true;
+
+/* ================= abrir ================= */
+function anotarOrigen(url, nombre){
+  if(url && !String(url).startsWith("data:")) E.origenes.add(url);
+  const n = (String(nombre || "").match(/^Fototeca \/.*\(n\.º (\d+)\)/) || [])[1];
+  if(n) E.fotos.add(Number(n));
+  if(!E.titulo && nombre) E.titulo = String(nombre).replace(/^.*\/\s*/, "").replace(/\.[a-z0-9]+$/i, "");
+}
+async function abrirURL(url, nombre, modo){
+  await MP.esperar();
+  url = conPrefijo(url);
+  nombre = nombre || decodeURIComponent(url.split("?")[0].split("/").pop() || "foto");
+  let img;
+  try{ img = await cargarImagen(url); }catch(e){ toast("No se pudo abrir: " + nombre); return; }
+  if((modo || E.modoAbrir) === "capa"){
+    const W = MP.cfg().WIDTH, H = MP.cfg().HEIGHT;
+    const k = Math.min(1, W / img.naturalWidth, H / img.naturalHeight);
+    const w = Math.round(img.naturalWidth * k), h = Math.round(img.naturalHeight * k);
+    await MP.insertarImagen(img, nombre, {x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), width: w, height: h});
+  }else{
+    E.origenes.clear(); E.fotos.clear(); E.titulo = "";
+    await MP.abrirDocumento(img, nombre);
+  }
+  anotarOrigen(url, nombre);
+  toast("Abierta: " + nombre);
+}
+async function abrirArchivo(archivo){
+  if(!archivo) return;
+  if(!/^image\//.test(archivo.type)){ toast("Elija una imagen (JPG, PNG, WebP…)"); return; }
+  if(E.servidor && $("#subir-al-banco").checked){
+    try{
+      const r = await fetch(api("/api/subir"), {method: "POST", body: archivo,
+        headers: {"Content-Type": archivo.type || "application/octet-stream", "X-Nombre": encodeURIComponent(archivo.name)}});
+      const d = await r.json().catch(() => ({}));
+      if(r.ok && d.ok && d.url){ await abrirURL(d.url, archivo.name); cargarBanco(); return; }
+      toast("No se guardó en el banco: " + (d.error || ("HTTP " + r.status)) + " · se abre igual");
+    }catch(e){ toast("No se guardó en el banco · se abre igual"); }
+  }
+  await abrirURL(await leerComoDataURL(archivo), archivo.name);
+}
+
+/* ================= banco ================= */
+async function cargarBanco(){
+  if(!E.servidor){ $("#banco-cuenta").textContent = "Sin servidor: abra fotos desde esta computadora"; return; }
+  try{
+    const r = await fetch(api("/api/media"), {cache: "no-store"});
+    const d = await r.json();
+    E.banco = Array.isArray(d) ? d : (d.imagenes || []);
+  }catch(_){ E.banco = []; }
+  pintarBanco();
+}
+function miniatura(url){
+  const i = url.indexOf("/banco/");
+  return i >= 0 && !/\.(svg|gif)$/i.test(url) ? api("/miniatura/" + url.slice(i + 7)) : url;
+}
+function pintarBanco(){
+  const q = $("#banco-buscar").value.trim().toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
+  const lista = E.banco.filter(it => !q || (it.name + " " + (it.credito || "")).toLowerCase()
+    .normalize("NFKD").replace(/[̀-ͯ]/g, "").includes(q));
+  $("#banco-cuenta").textContent = lista.length + " de " + E.banco.length + " fotos";
+  const caja = $("#banco-rejilla");
+  caja.innerHTML = lista.slice(0, 300).map((it, i) =>
+    `<button class="foto" data-i="${E.banco.indexOf(it)}" title="${esc(it.name)}${it.credito ? " · " + esc(it.credito) : ""}">
+       <img loading="lazy" decoding="async" alt="" src="${esc(miniatura(it.url))}"><span>${esc(it.name.split(" / ").pop())}</span></button>`).join("");
+}
+
+/* ================= formato ================= */
+const FORMATOS = [
+  {nombre: "Cuadrado 1:1", uso: "publicación de Facebook o Instagram", w: 1080, h: 1080},
+  {nombre: "Vertical 4:5", uso: "Instagram y Facebook (feed)", w: 1080, h: 1350},
+  {nombre: "Historia 9:16", uso: "estados, historias, TikTok", w: 1080, h: 1920},
+  {nombre: "Horizontal 16:9", uso: "X, YouTube, web", w: 1920, h: 1080},
+  {nombre: "Informe 3:2", uso: "foto para informes y documentos", w: 1800, h: 1200},
+];
+function pintarFormatos(){
+  $("#formatos").innerHTML = FORMATOS.map((f, i) => {
+    const k = 22 / Math.max(f.w, f.h);
+    return `<button class="formato" data-i="${i}"><span class="muestra"><i style="width:${Math.round(f.w * k)}px;height:${Math.round(f.h * k)}px"></i></span>
+      <span><b>${esc(f.nombre)}</b> · ${f.w}×${f.h}<small>${esc(f.uso)}</small></span></button>`;
+  }).join("");
+}
+/** Lienzo del formato y la foto encuadrada, en UNA acción: Ctrl+Z devuelve lienzo, posición y tamaño. */
+async function aplicarFormato(ancho, alto){
+  await MP.esperar();
+  const c = MP.cfg(), activa = c.layer;
+  const capa = activa && activa.type === "image" && activa.width_original != null ? activa
+    : c.layers.find(l => l.type === "image" && l.width_original != null);
+  const antes = {w: c.WIDTH, h: c.HEIGHT, p: capa ? MP.props(capa) : null};
+  const despues = capa ? MP.encaje(capa, ancho, alto, E.encuadre) : null, id = capa && capa.id;
+  await MP.hacer(MP.accion("estudio_formato", "Formato " + ancho + " × " + alto,
+    () => { MP.ponerLienzo(ancho, alto); if(id != null) MP.ponerCapa(id, despues); },
+    () => { MP.ponerLienzo(antes.w, antes.h); if(id != null) MP.ponerCapa(id, antes.p); }));
+  MP.modulo("view/zoom.auto");
+  toast("Lienzo de " + ancho + " × " + alto + " px");
+}
+
+/* ================= tono: niveles + curvas (por canal) sobre la capa activa ================= */
+/* La vista previa es EN VIVO sobre el lienzo (link_canvas de la capa, como el motor al mover una selección) y respeta
+   la selección; aplicar es una sola acción del motor (se deshace con Ctrl+Z). */
+const Tono = (() => {
+  const CANALES = ["rgb", "r", "g", "b"];
+  const recta = () => [[0, 0], [255, 255]];
+  const st = {negro: 0, gamma: 100, blanco: 255, curvas: {rgb: recta(), r: recta(), g: recta(), b: recta()}};
+  let base = null, capaBase = null, muestra = null, pedido = false;
+
+  /** Curva monótona (Fritsch–Carlson) por los puntos → tabla de 256 valores. */
+  function curvaLUT(pts){
+    const p = pts.slice().sort((a, b) => a[0] - b[0]), n = p.length, xs = p.map(q => q[0]), ys = p.map(q => q[1]);
+    const t = new Float32Array(256);
+    if(n < 2){ t.fill(n ? ys[0] : 0); return t; }
+    const d = [], m = new Array(n).fill(0);
+    for(let i = 0; i < n - 1; i++) d[i] = (ys[i + 1] - ys[i]) / ((xs[i + 1] - xs[i]) || 1);
+    m[0] = d[0]; m[n - 1] = d[n - 2];
+    for(let i = 1; i < n - 1; i++) m[i] = d[i - 1] * d[i] <= 0 ? 0 : (d[i - 1] + d[i]) / 2;
+    for(let i = 0; i < n - 1; i++){
+      if(d[i] === 0){ m[i] = 0; m[i + 1] = 0; continue; }
+      const a = m[i] / d[i], b = m[i + 1] / d[i], s = a * a + b * b;
+      if(s > 9){ const k = 3 / Math.sqrt(s); m[i] = k * a * d[i]; m[i + 1] = k * b * d[i]; }
+    }
+    let i = 0;
+    for(let x = 0; x < 256; x++){
+      let y;
+      if(x <= xs[0]) y = ys[0];
+      else if(x >= xs[n - 1]) y = ys[n - 1];
+      else{
+        while(i < n - 2 && x > xs[i + 1]) i++;
+        const h = xs[i + 1] - xs[i], u = (x - xs[i]) / h, u2 = u * u, u3 = u2 * u;
+        y = (2 * u3 - 3 * u2 + 1) * ys[i] + (u3 - 2 * u2 + u) * h * m[i] + (-2 * u3 + 3 * u2) * ys[i + 1] + (u3 - u2) * h * m[i + 1];
+      }
+      t[x] = Math.max(0, Math.min(255, y));
+    }
+    return t;
+  }
+  function luts(){
+    const negro = st.negro, blanco = Math.max(negro + 1, st.blanco), g = st.gamma / 100;
+    const cr = curvaLUT(st.curvas.rgb), c = {r: curvaLUT(st.curvas.r), g: curvaLUT(st.curvas.g), b: curvaLUT(st.curvas.b)};
+    const out = {r: new Uint8ClampedArray(256), g: new Uint8ClampedArray(256), b: new Uint8ClampedArray(256)};
+    for(let v = 0; v < 256; v++){
+      const n = Math.pow(Math.min(1, Math.max(0, (v - negro) / (blanco - negro))), 1 / g) * 255;
+      const m = Math.round(cr[Math.round(n)]);
+      out.r[v] = c.r[m]; out.g[v] = c.g[m]; out.b[v] = c.b[m];
+    }
+    return out;
+  }
+  const esRecta = p => p.length === 2 && p[0][0] === 0 && p[0][1] === 0 && p[1][0] === 255 && p[1][1] === 255;
+  const neutro = () => st.negro === 0 && st.blanco === 255 && st.gamma === 100 && CANALES.every(k => esRecta(st.curvas[k]));
+  function aplicarLUT(datos, t){
+    const d = datos.data;
+    for(let i = 0; i < d.length; i += 4){ d[i] = t.r[d[i]]; d[i + 1] = t.g[d[i + 1]]; d[i + 2] = t.b[d[i + 2]]; }
+    return datos;
+  }
+  function capaActiva(){ const c = MP.cfg().layer; return c && c.type === "image" ? c : null; }
+  function quitarVista(){
+    const l = capaBase != null && MP.w() && MP.w().Layers.get_layer(capaBase);
+    if(l && l.link_canvas && l.link_canvas._estudioTono){ delete l.link_canvas; MP.render(); }
+  }
+  function tomarMuestra(){
+    quitarVista(); base = null; muestra = null; capaBase = null;
+    const capa = capaActiva();
+    if(!capa){ $("#tono-nota").textContent = "La capa activa no es una imagen: rasterícela (panel Capas) o elija otra."; dibujar(); return; }
+    base = MP.w().Layers.convert_layer_to_canvas(capa.id, true, false); capaBase = capa.id;
+    const cv = $("#tono-vista"), k = Math.min(cv.width / base.width, cv.height / base.height, 1);
+    const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(base.width * k)); c.height = Math.max(1, Math.round(base.height * k));
+    c.getContext("2d").drawImage(base, 0, 0, c.width, c.height);
+    muestra = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    $("#tono-nota").textContent = "Capa «" + capa.name + "»" + (Sel.activa() ? " · solo la selección" : "") + "; aplicar se deshace con Ctrl+Z.";
+    dibujar(); vistaPrevia();
+  }
+  /** Vista previa en el lienzo (a lo sumo una por cuadro). */
+  function vistaPrevia(){
+    if(pedido) return; pedido = true;
+    requestAnimationFrame(() => {
+      pedido = false;
+      const l = base && MP.w().Layers.get_layer(capaBase);
+      if(!l) return;
+      if(neutro() || !$("#t-vista").checked){ quitarVista(); return; }
+      const c = document.createElement("canvas"); c.width = base.width; c.height = base.height;
+      const x = c.getContext("2d"); x.drawImage(base, 0, 0);
+      x.putImageData(aplicarLUT(x.getImageData(0, 0, c.width, c.height), luts()), 0, 0);
+      const out = Sel.activa() ? Sel.mezclar(l, c) : c;
+      out._estudioTono = true; l.link_canvas = out; MP.render();
+    });
+  }
+  function histograma(datos, canal){
+    const h = new Uint32Array(256), d = datos.data, k = {r: 0, g: 1, b: 2}[canal];
+    for(let i = 0; i < d.length; i += 4)
+      h[k == null ? Math.round(0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) : d[i + k]]++;
+    return h;
+  }
+  function pintarHistograma(cv, h, color){
+    const x = cv.getContext("2d"), max = Math.max(...h.slice(1, 255)) || 1;
+    x.fillStyle = color;
+    for(let v = 0; v < 256; v++){ const a = Math.min(1, h[v] / max) * cv.height; x.fillRect(v * cv.width / 256, cv.height - a, cv.width / 256 + 0.5, a); }
+  }
+  function dibujar(){
+    const cv = $("#tono-vista"), x = cv.getContext("2d");
+    x.clearRect(0, 0, cv.width, cv.height);
+    const hc = $("#histograma"); hc.getContext("2d").clearRect(0, 0, hc.width, hc.height);
+    if(!muestra) return;
+    const copia = new ImageData(new Uint8ClampedArray(muestra.data), muestra.width, muestra.height);
+    aplicarLUT(copia, luts());
+    x.putImageData(copia, Math.round((cv.width - copia.width) / 2), Math.round((cv.height - copia.height) / 2));
+    pintarHistograma(hc, histograma(copia), token("--est-texto-3"));
+  }
+  function salidas(){
+    $("#t-negro").value = st.negro; $("#t-gamma").value = st.gamma; $("#t-blanco").value = st.blanco;
+    $("#t-negro").nextElementSibling.textContent = st.negro;
+    $("#t-gamma").nextElementSibling.textContent = (st.gamma / 100).toFixed(2).replace(".", ",");
+    $("#t-blanco").nextElementSibling.textContent = st.blanco;
+    const n = CANALES.filter(k => !esRecta(st.curvas[k])).length;
+    $("#b-curvas").lastChild.textContent = n ? "Curvas… (" + n + ")" : "Curvas…";
+  }
+  function cambiar(){ salidas(); dibujar(); vistaPrevia(); Curvas.dibujar(); }
+  function cero(){ st.negro = 0; st.gamma = 100; st.blanco = 255; CANALES.forEach(k => st.curvas[k] = recta()); cambiar(); }
+  function auto(){
+    if(!muestra) return;
+    const h = histograma(muestra), corte = muestra.width * muestra.height * 0.005;
+    let a = 0, negro = 0, blanco = 255;
+    for(let v = 0; v < 256; v++){ a += h[v]; if(a > corte){ negro = v; break; } }
+    a = 0; for(let v = 255; v >= 0; v--){ a += h[v]; if(a > corte){ blanco = v; break; } }
+    st.negro = Math.min(negro, 250); st.blanco = Math.max(blanco, st.negro + 5); cambiar();
+  }
+  async function aplicar(){
+    const capa = capaActiva();
+    if(!capa){ toast("La capa activa no es una imagen"); return; }
+    if(neutro()){ toast("Sin cambios que aplicar"); return; }
+    quitarVista();
+    const c = MP.w().Layers.convert_layer_to_canvas(capa.id, true, false), x = c.getContext("2d");
+    x.putImageData(aplicarLUT(x.getImageData(0, 0, c.width, c.height), luts()), 0, 0);
+    await MP.w().Layers.update_layer_image(c, capa.id);       // el gancho de la selección la limita a lo seleccionado
+    st.negro = 0; st.gamma = 100; st.blanco = 255; CANALES.forEach(k => st.curvas[k] = recta());
+    salidas(); MP.render(); tomarMuestra();
+    toast("Tono aplicado a «" + capa.name + "»" + (Sel.activa() ? " (selección)" : ""));
+  }
+  function iniciar(){
+    for(const id of ["negro", "gamma", "blanco"]) $("#t-" + id).addEventListener("input", e => { st[id] = +e.target.value; cambiar(); });
+    $("#t-vista").onchange = vistaPrevia;
+    $("#b-tono-cero").onclick = cero; $("#b-tono-auto").onclick = auto; $("#b-tono-aplicar").onclick = aplicar;
+    $("#b-curvas").onclick = () => MP.esperar().then(() => { if(!base) tomarMuestra(); Curvas.abrir(); });
+    salidas();
+  }
+  return {iniciar, tomarMuestra, quitarVista, aplicar, cambiar, curvaLUT, histograma, pintarHistograma, st,
+    capaMuestra: () => capaBase, muestra: () => muestra};
+})();
+
+/* Editor de curvas: puntos arrastrables por canal (RGB, rojo, verde, azul) con el histograma detrás. */
+const Curvas = (() => {
+  let canal = "rgb", arrastre = null, copia = null;
+  const cv = () => $("#curvas-lienzo");
+  const abierto = () => $("#m-curvas").classList.contains("on");
+  const pts = () => Tono.st.curvas[canal];
+  function aCurva(e){
+    const r = cv().getBoundingClientRect();
+    return [(e.clientX - r.left) / r.width * 255, (1 - (e.clientY - r.top) / r.height) * 255, e.clientY - r.top, r.height];
+  }
+  function dibujar(){
+    if(!abierto()) return;
+    const c = cv(), x = c.getContext("2d"), W = c.width, H = c.height;
+    x.fillStyle = token("--est-sup-1"); x.fillRect(0, 0, W, H);
+    const m = Tono.muestra();
+    if(m) Tono.pintarHistograma(c, Tono.histograma(m, canal === "rgb" ? null : canal), token("--est-sup-hover"));
+    x.strokeStyle = token("--est-borde-control"); x.lineWidth = 1;
+    for(let i = 1; i < 4; i++){ x.beginPath(); x.moveTo(i * W / 4, 0); x.lineTo(i * W / 4, H); x.moveTo(0, i * H / 4); x.lineTo(W, i * H / 4); x.stroke(); }
+    x.setLineDash([4, 4]); x.beginPath(); x.moveTo(0, H); x.lineTo(W, 0); x.stroke(); x.setLineDash([]);
+    const t = Tono.curvaLUT(pts());
+    x.strokeStyle = token("--est-acento-linea"); x.lineWidth = 3; x.beginPath();
+    for(let v = 0; v < 256; v++){ const px = v / 255 * W, py = (1 - t[v] / 255) * H; v ? x.lineTo(px, py) : x.moveTo(px, py); }
+    x.stroke();
+    x.fillStyle = token("--est-texto"); x.strokeStyle = token("--est-sup-0"); x.lineWidth = 2;
+    for(const [px, py] of pts()){ x.beginPath(); x.arc(px / 255 * W, (1 - py / 255) * H, 8, 0, Math.PI * 2); x.fill(); x.stroke(); }
+  }
+  function cercano(p){
+    const r = cv().getBoundingClientRect(), k = 255 / r.width;
+    let mejor = -1, dmin = 12 * k;
+    pts().forEach((q, i) => { const d = Math.hypot(q[0] - p[0], q[1] - p[1]); if(d < dmin){ dmin = d; mejor = i; } });
+    return mejor;
+  }
+  function ordenar(){ const p = pts(); const sel = arrastre != null ? p[arrastre] : null; p.sort((a, b) => a[0] - b[0]); if(sel) arrastre = p.indexOf(sel); }
+  function abajo(e){
+    e.preventDefault(); cv().setPointerCapture(e.pointerId);
+    const p = aCurva(e); let i = cercano(p);
+    if(i < 0){
+      const x = Math.round(Math.max(1, Math.min(254, p[0])));
+      if(pts().some(q => Math.abs(q[0] - x) < 3)) return;
+      pts().push([x, Math.round(Math.max(0, Math.min(255, p[1])))]); arrastre = pts().length - 1; ordenar();
+    }else arrastre = i;
+    Tono.cambiar();
+  }
+  function mover(e){
+    const p = aCurva(e);
+    if(arrastre == null){
+      $("#curvas-lectura").textContent = "Entrada " + Math.round(Math.max(0, Math.min(255, p[0]))) + " · salida " +
+        Math.round(Tono.curvaLUT(pts())[Math.round(Math.max(0, Math.min(255, p[0])))]);
+      return;
+    }
+    const q = pts(), i = arrastre, extremo = i === 0 || i === q.length - 1;
+    if(!extremo && (p[2] < -24 || p[2] > p[3] + 24)){ q.splice(i, 1); arrastre = null; Tono.cambiar(); return; }
+    const min = i === 0 ? 0 : q[i - 1][0] + 1, max = i === q.length - 1 ? 255 : q[i + 1][0] - 1;
+    q[i] = [Math.round(Math.max(min, Math.min(max, p[0]))), Math.round(Math.max(0, Math.min(255, p[1])))];
+    $("#curvas-lectura").textContent = "Entrada " + q[i][0] + " · salida " + q[i][1];
+    Tono.cambiar();
+  }
+  function arriba(){ arrastre = null; }
+  function doble(e){ const i = cercano(aCurva(e)); if(i > 0 && i < pts().length - 1){ pts().splice(i, 1); Tono.cambiar(); } }
+  function abrir(){ copia = JSON.parse(JSON.stringify(Tono.st.curvas)); $("#m-curvas").classList.add("on"); dibujar(); }
+  function cerrar(){ $("#m-curvas").classList.remove("on"); arrastre = null; }
+  function iniciar(){
+    const c = cv();
+    c.style.width = "100%"; c.style.height = "auto"; c.style.aspectRatio = "1"; c.style.touchAction = "none"; c.style.cursor = "crosshair";
+    c.style.borderRadius = "var(--est-radio-sm)"; c.style.display = "block";
+    c.addEventListener("pointerdown", abajo); c.addEventListener("pointermove", mover);
+    c.addEventListener("pointerup", arriba); c.addEventListener("pointercancel", arriba); c.addEventListener("dblclick", doble);
+    $("#curvas-canal").addEventListener("click", e => { const b = e.target.closest("button"); if(!b) return;
+      $$("#curvas-canal button").forEach(x => x.classList.toggle("on", x === b)); canal = b.dataset.canal; dibujar(); });
+    $("#curvas-canal-cero").onclick = () => { Tono.st.curvas[canal] = [[0, 0], [255, 255]]; Tono.cambiar(); };
+    $("#curvas-cancelar").onclick = () => { Object.assign(Tono.st.curvas, copia); cerrar(); Tono.cambiar(); };
+    $("#curvas-aceptar").onclick = cerrar;
+    $("#curvas-aplicar").onclick = () => { cerrar(); Tono.aplicar(); };
+    $("#m-curvas").addEventListener("click", e => { if(e.target.id === "m-curvas") cerrar(); });
+  }
+  return {iniciar, abrir, cerrar, dibujar, abierto};
+})();
+
+/* ================= selección: rectángulo, elipse, lazo, lazo poligonal y varita mágica ================= */
+/* El motor solo trae una selección rectangular que no limita sus herramientas. Aquí la selección es una MÁSCARA
+   del tamaño del lienzo (alfa = cuánto está seleccionado, con calado) y el estudio la impone al motor:
+     · toda acción que reescribe los píxeles de una capa de imagen (ajustes, filtros, tampón, borrador, relleno…)
+       pasa por State.do_action: antes de ejecutarla se mezcla su resultado con la imagen anterior según la máscara;
+     · las capas de pincel y lápiz creadas con una selección se dibujan recortadas por ella (render_object);
+     · el contorno («hormigas») se dibuja en el lienzo tras las capas (render_overlay).
+   Cada cambio de selección es una acción del motor: Ctrl+Z la deshace como cualquier otra. */
+const Sel = (() => {
+  let mascara = null, contorno = null, caja = null;      // canvas W×H · Path2D · {x,y,w,h}
+  let herramienta = null, trazo = null, desfase = 0, capaEventos = null, temporal = null;
+  const W = () => MP.cfg().WIDTH, H = () => MP.cfg().HEIGHT;
+  const activa = () => !!mascara;
+  const lienzo = (w, h) => { const c = document.createElement("canvas"); c.width = w; c.height = h; return c; };
+  const escala = () => { const L = MP.w().Layers, a = L.get_world_coords(0, 0), b = L.get_world_coords(100, 0);
+    const s = 100 / ((b.x - a.x) || 1); return {s, tx: -a.x * s, ty: -a.y * s}; };
+
+  /* ---- máscara: estado con deshacer ---- */
+  function poner(nueva, nombre){
+    const antes = mascara;
+    return MP.hacer(MP.accion("estudio_seleccion", nombre || "Selección",
+      () => { mascara = nueva; actualizar(); }, () => { mascara = antes; actualizar(); }));
+  }
+  function actualizar(){
+    contorno = null; caja = null;
+    if(mascara && (mascara.width !== W() || mascara.height !== H())) mascara = null;
+    if(mascara){
+      const w = mascara.width, h = mascara.height, d = mascara.getContext("2d").getImageData(0, 0, w, h).data;
+      const dentro = (x, y) => x >= 0 && y >= 0 && x < w && y < h && d[(y * w + x) * 4 + 3] >= 128;
+      const p = new Path2D(); let x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for(let y = 0; y <= h; y++){                       // bordes horizontales, en tramos
+        let ini = -1;
+        for(let x = 0; x <= w; x++){
+          const borde = x < w && dentro(x, y) !== dentro(x, y - 1);
+          if(borde && ini < 0) ini = x;
+          if(!borde && ini >= 0){ p.moveTo(ini, y); p.lineTo(x, y); ini = -1; }
+          if(x < w && y < h && dentro(x, y)){ if(x < x0) x0 = x; if(x > x1) x1 = x; if(y < y0) y0 = y; if(y > y1) y1 = y; }
+        }
+      }
+      for(let x = 0; x <= w; x++){                       // bordes verticales
+        let ini = -1;
+        for(let y = 0; y <= h; y++){
+          const borde = y < h && dentro(x, y) !== dentro(x - 1, y);
+          if(borde && ini < 0) ini = y;
+          if(!borde && ini >= 0){ p.moveTo(x, ini); p.lineTo(x, y); ini = -1; }
+        }
+      }
+      if(x1 < 0){
+        // nada por encima de la mitad: con calado puede quedar algo tenue; si no hay nada, no hay selección
+        let algo = false; for(let i = 3; i < d.length; i += 4) if(d[i]){ algo = true; break; }
+        if(!algo) mascara = null;
+      }else{ contorno = p; caja = {x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1}; }
+    }
+    $("#sel-medida").textContent = caja ? caja.w + " × " + caja.h + " px" : (mascara ? "calada" : "sin selección");
+    $("#estado-sel").hidden = !mascara;
+    $("#estado-sel-txt").textContent = caja ? caja.w + " × " + caja.h : "calada";
+    try{ MP.render(); if($("#v-tono").classList.contains("on")) Tono.tomarMuestra(); }catch(_){}
+  }
+  /** Forma nueva (canvas W×H) combinada con la máscara según el modo. */
+  function combinar(forma, modo, nombre){
+    const calado = +$("#sel-calado").value;
+    if(calado > 0){ const c = lienzo(W(), H()), x = c.getContext("2d"); x.filter = "blur(" + calado + "px)"; x.drawImage(forma, 0, 0); forma = c; }
+    let nueva;
+    if(modo === "nueva" || !mascara){
+      if(!mascara && (modo === "restar" || modo === "intersecar")) return;
+      nueva = forma;
+    }else{
+      nueva = lienzo(W(), H()); const x = nueva.getContext("2d");
+      x.drawImage(mascara, 0, 0);
+      x.globalCompositeOperation = modo === "sumar" ? "source-over" : modo === "restar" ? "destination-out" : "destination-in";
+      x.drawImage(forma, 0, 0);
+    }
+    return poner(nueva, nombre);
+  }
+  function rellenarForma(dibujo){
+    const c = lienzo(W(), H()), x = c.getContext("2d");
+    x.fillStyle = token("--fondo-blanco") || "white"; x.beginPath(); dibujo(x); x.fill();
+    return c;
+  }
+  function ruta(x, t){
+    if(t.tipo === "rect" || t.tipo === "elipse"){
+      const x0 = Math.min(t.a.x, t.b.x), y0 = Math.min(t.a.y, t.b.y), w = Math.abs(t.b.x - t.a.x), h = Math.abs(t.b.y - t.a.y);
+      if(t.tipo === "rect") x.rect(x0, y0, w, h);
+      else x.ellipse(x0 + w / 2, y0 + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    }else{
+      t.puntos.forEach((p, i) => i ? x.lineTo(p.x, p.y) : x.moveTo(p.x, p.y));
+      if(t.tipo === "poligono" && t.cursor) x.lineTo(t.cursor.x, t.cursor.y);
+      x.closePath();
+    }
+  }
+  function cerrarTrazo(){
+    const t = trazo; trazo = null; MP.render();
+    if(!t) return;
+    if(t.tipo === "rect" || t.tipo === "elipse"){
+      if(Math.abs(t.b.x - t.a.x) < 2 || Math.abs(t.b.y - t.a.y) < 2){ if(t.modo === "nueva" && mascara) poner(null, "Quitar selección"); return; }
+    }else if(t.puntos.length < 3) return;
+    const nombres = {rect: "Selección rectangular", elipse: "Selección elíptica", lazo: "Lazo", poligono: "Lazo poligonal"};
+    combinar(rellenarForma(x => { const c = t.cursor; delete t.cursor; ruta(x, t); t.cursor = c; }), t.modo, nombres[t.tipo]);
+  }
+
+  /* ---- varita mágica ---- */
+  function varita(p, modo){
+    const w = W(), h = H(), px = Math.floor(p.x), py = Math.floor(p.y);
+    if(px < 0 || py < 0 || px >= w || py >= h) return;
+    const fuente = lienzo(w, h), fx = fuente.getContext("2d");
+    if($("#sel-todas").checked) MP.w().Layers.convert_layers_to_canvas(fx, null, false);
+    else MP.w().Layers.convert_layers_to_canvas(fx, MP.cfg().layer.id, false);
+    const d = fx.getImageData(0, 0, w, h).data, tol = +$("#sel-tolerancia").value;
+    const i0 = (py * w + px) * 4, r0 = d[i0], g0 = d[i0 + 1], b0 = d[i0 + 2], a0 = d[i0 + 3];
+    const parece = i => Math.max(Math.abs(d[i] - r0), Math.abs(d[i + 1] - g0), Math.abs(d[i + 2] - b0), Math.abs(d[i + 3] - a0)) <= tol;
+    const out = new ImageData(w, h), o = out.data;
+    if($("#sel-contigua").checked){
+      const visto = new Uint8Array(w * h), pila = new Int32Array(w * h); let n = 0;
+      pila[n++] = py * w + px; visto[py * w + px] = 1;
+      while(n){
+        const k = pila[--n]; o[k * 4 + 3] = 255; o[k * 4] = o[k * 4 + 1] = o[k * 4 + 2] = 255;
+        const x = k % w, y = (k - x) / w;
+        for(const v of [x > 0 ? k - 1 : -1, x < w - 1 ? k + 1 : -1, y > 0 ? k - w : -1, y < h - 1 ? k + w : -1])
+          if(v >= 0 && !visto[v]){ visto[v] = 1; if(parece(v * 4)) pila[n++] = v; }
+      }
+    }else{
+      for(let k = 0; k < w * h; k++) if(parece(k * 4)){ o[k * 4 + 3] = 255; o[k * 4] = o[k * 4 + 1] = o[k * 4 + 2] = 255; }
+    }
+    const forma = lienzo(w, h); forma.getContext("2d").putImageData(out, 0, 0);
+    return combinar(forma, modo, "Varita mágica");
+  }
+
+  /* ---- operaciones sobre la selección ---- */
+  function todo(){ return poner(rellenarForma(x => x.rect(0, 0, W(), H())), "Seleccionar todo"); }
+  function nada(){ if(mascara) return poner(null, "Quitar selección"); }
+  function invertir(){
+    const c = rellenarForma(x => x.rect(0, 0, W(), H()));
+    if(mascara){ const x = c.getContext("2d"); x.globalCompositeOperation = "destination-out"; x.drawImage(mascara, 0, 0); }
+    return poner(c, "Invertir selección");
+  }
+  function calar(){
+    const px = +$("#sel-calado").value;
+    if(!mascara){ toast("No hay selección"); return; }
+    if(!px){ toast("Elija un calado mayor que 0"); return; }
+    const c = lienzo(W(), H()), x = c.getContext("2d"); x.filter = "blur(" + px + "px)"; x.drawImage(mascara, 0, 0);
+    return poner(c, "Calar selección");
+  }
+  /** Transforma un contexto del espacio del lienzo al de los píxeles de una capa de imagen (tamaño original),
+      deshaciendo la rotación con que el motor la pinta (gira alrededor de su centro: render_object). */
+  function aCapaTransform(x, l){
+    const sx = l.width_original / l.width, sy = l.height_original / l.height;
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.scale(sx, sy); x.translate(l.width / 2, l.height / 2);
+    if(l.rotate) x.rotate(-l.rotate * Math.PI / 180);
+    x.translate(-(l.x + l.width / 2), -(l.y + l.height / 2));
+  }
+  /** La máscara en el espacio de píxeles de una capa de imagen (tamaño original; con su rotación). */
+  function enCapa(l, m){
+    const c = lienzo(l.width_original, l.height_original), x = c.getContext("2d");
+    aCapaTransform(x, l); x.drawImage(m || mascara, 0, 0);
+    return c;
+  }
+  /** nuevo dentro de la selección + la imagen anterior fuera de ella. */
+  function mezclar(l, nuevo){
+    const m = enCapa(l), w = l.width_original, h = l.height_original;
+    const dentro = lienzo(w, h), a = dentro.getContext("2d");
+    a.drawImage(nuevo, 0, 0); a.globalCompositeOperation = "destination-in"; a.drawImage(m, 0, 0);
+    const fuera = lienzo(w, h), b = fuera.getContext("2d");
+    b.drawImage(l.link, 0, 0); b.globalCompositeOperation = "destination-out"; b.drawImage(m, 0, 0);
+    b.globalCompositeOperation = "lighter"; b.drawImage(dentro, 0, 0);
+    return fuera;
+  }
+  function capaImagen(){
+    const l = MP.cfg().layer;
+    if(!l || l.type !== "image"){ toast("La capa activa no es una imagen: rasterícela (panel Capas)"); return null; }
+    if(!mascara){ toast("No hay selección"); return null; }
+    return l;
+  }
+  function rellenar(){
+    const l = capaImagen(); if(!l) return;
+    const c = lienzo(l.width_original, l.height_original), x = c.getContext("2d");
+    x.fillStyle = MP.cfg().COLOR; x.fillRect(0, 0, c.width, c.height);
+    return MP.w().Layers.update_layer_image(c, l.id);
+  }
+  function borrar(){
+    const l = capaImagen(); if(!l) return;
+    return MP.w().Layers.update_layer_image(lienzo(l.width_original, l.height_original), l.id);
+  }
+  function recorte(l){
+    const c = lienzo(l.width_original, l.height_original), x = c.getContext("2d");
+    x.drawImage(l.link, 0, 0); x.globalCompositeOperation = "destination-in"; x.drawImage(enCapa(l), 0, 0);
+    return c;
+  }
+  async function aCapa(cortar){
+    const l = capaImagen(); if(!l) return;
+    const c = recorte(l), img = await cargarImagen(c.toDataURL("image/png"));
+    if(cortar) await borrar();
+    await MP.w().Layers.insert({name: (cortar ? "Recorte de " : "Copia de ") + l.name, type: "image", data: img,
+      x: l.x, y: l.y, width: l.width, height: l.height, width_original: c.width, height_original: c.height});
+    MP.render(); toast(cortar ? "Selección cortada a una capa nueva" : "Selección copiada a una capa nueva");
+  }
+  async function copiar(){
+    const l = capaImagen(); if(!l) return;
+    const doc = lienzo(W(), H()), x = doc.getContext("2d");
+    MP.w().Layers.convert_layers_to_canvas(x, l.id, false);
+    x.globalCompositeOperation = "destination-in"; x.drawImage(mascara, 0, 0);
+    const k = caja || {x: 0, y: 0, w: W(), h: H()}, c = lienzo(k.w, k.h);
+    c.getContext("2d").drawImage(doc, -k.x, -k.y);
+    try{
+      const b = await new Promise(r => c.toBlob(r, "image/png"));
+      await navigator.clipboard.write([new ClipboardItem({"image/png": b})]);
+      toast("Selección copiada al portapapeles (" + k.w + " × " + k.h + " px)");
+    }catch(e){ toast("El navegador no dejó copiar al portapapeles: use «Copiar a capa nueva»"); }
+  }
+
+  /* ---- herramientas sobre el lienzo (capa de eventos encima del canvas del motor) ---- */
+  function mundo(e){
+    const cv = MP.w().document.getElementById("canvas_minipaint").getBoundingClientRect();
+    return MP.w().Layers.get_world_coords(e.clientX - cv.left, e.clientY - cv.top);
+  }
+  function modoDe(e){
+    if(e.shiftKey && e.altKey) return "intersecar";
+    if(e.shiftKey) return "sumar";
+    if(e.altKey) return "restar";
+    return E.selModo;
+  }
+  function eventos(div){
+    const parar = e => { e.stopPropagation(); };
+    ["mousedown", "mousemove", "mouseup", "touchstart", "touchmove", "touchend", "click", "contextmenu"].forEach(t => div.addEventListener(t, e => {
+      parar(e); if(t === "contextmenu" || t === "mousedown") e.preventDefault(); }));
+    div.addEventListener("pointerdown", e => {
+      parar(e); if(e.button !== 0) return;
+      const p = mundo(e), modo = modoDe(e);
+      if(herramienta === "varita"){ varita(p, modo); return; }
+      if(herramienta === "poligono"){
+        if(!trazo){ trazo = {tipo: "poligono", puntos: [p], modo}; }
+        else{
+          const s = escala().s, q = trazo.puntos[0];
+          if(trazo.puntos.length > 2 && Math.hypot(p.x - q.x, p.y - q.y) * s < 8) cerrarTrazo(); else trazo.puntos.push(p);
+        }
+        MP.render(); return;
+      }
+      div.setPointerCapture(e.pointerId);
+      trazo = herramienta === "lazo" ? {tipo: "lazo", puntos: [p], modo} : {tipo: herramienta, a: p, b: p, modo};
+      MP.render();
+    });
+    div.addEventListener("pointermove", e => {
+      parar(e); if(!trazo) return;
+      const p = mundo(e);
+      if(trazo.tipo === "lazo"){ const q = trazo.puntos[trazo.puntos.length - 1]; if(Math.hypot(p.x - q.x, p.y - q.y) * escala().s >= 2) trazo.puntos.push(p); }
+      else if(trazo.tipo === "poligono") trazo.cursor = p;
+      else{
+        trazo.b = p;
+        if(e.shiftKey && trazo.modo === "nueva"){ const m = Math.max(Math.abs(p.x - trazo.a.x), Math.abs(p.y - trazo.a.y));
+          trazo.b = {x: trazo.a.x + Math.sign(p.x - trazo.a.x || 1) * m, y: trazo.a.y + Math.sign(p.y - trazo.a.y || 1) * m}; }
+      }
+      MP.render();
+    });
+    div.addEventListener("pointerup", e => { parar(e); if(trazo && trazo.tipo !== "poligono") cerrarTrazo(); });
+    div.addEventListener("dblclick", e => { parar(e); if(trazo && trazo.tipo === "poligono"){ trazo.puntos.pop(); cerrarTrazo(); } });
+  }
+  function capa(){
+    const doc = MP.w().document;
+    if(capaEventos && doc.contains(capaEventos)) return capaEventos;
+    const div = doc.createElement("div"); div.id = "estudio-seleccion";
+    div.style.cssText = "position:absolute;inset:0;z-index:20;cursor:crosshair;display:none;touch-action:none;";
+    doc.getElementById("canvas_wrapper").appendChild(div); eventos(div);
+    return capaEventos = div;
+  }
+  function usar(nombre){
+    herramienta = nombre; trazo = null;
+    capa().style.display = nombre ? "block" : "none";
+    $$("#sel-herramientas [data-sel]").forEach(b => b.classList.toggle("on", b.dataset.sel === nombre));
+    $("#estado-herr").textContent = nombre ? {rect: "Rectángulo", elipse: "Elipse", lazo: "Lazo", poligono: "Lazo poligonal", varita: "Varita mágica"}[nombre] : "del lienzo";
+    MP.render();
+  }
+
+  /* ---- enganche con el motor ---- */
+  function instalar(v){
+    const L = v.Layers, S = v.State;
+    // 1) las acciones que reescriben píxeles quedan limitadas a la selección
+    const hacerOriginal = S.do_action.bind(S);
+    const limitar = a => {
+      if(!a) return;
+      if(Array.isArray(a.actions_to_do)) a.actions_to_do.forEach(limitar);
+      if(a.action_id === "update_layer_image" && a.canvas && !a._estudioSel){
+        const l = L.get_layer(a.layer_id);
+        if(l && l.type === "image" && a.canvas.width === l.width_original && a.canvas.height === l.height_original){
+          a.canvas = mezclar(l, a.canvas); a._estudioSel = true;
+        }
+      }
+    };
+    S.do_action = async (accion, opciones) => {
+      if(mascara) try{ limitar(accion); }catch(e){ console.warn("selección", e); }
+      const r = await hacerOriginal(accion, opciones);
+      // 2) una capa de pincel o lápiz nacida con selección queda recortada por ella
+      const c = v.AppConfig.layer;
+      if(mascara && c && (c.type === "brush" || c.type === "pencil") && !c._estudio_mascara){
+        const m = lienzo(mascara.width, mascara.height); m.getContext("2d").drawImage(mascara, 0, 0); c._estudio_mascara = m;
+      }
+      return r;
+    };
+    const dibujarObjeto = L.render_object;
+    L.render_object = function(ctx, obj, previa){
+      const m = obj && obj._estudio_mascara;
+      if(!m || obj.visible == false) return dibujarObjeto.call(this, ctx, obj, previa);
+      const w = v.AppConfig.WIDTH, h = v.AppConfig.HEIGHT;
+      if(!temporal || temporal.width !== w || temporal.height !== h) temporal = lienzo(w, h);
+      const t = temporal.getContext("2d");
+      t.setTransform(1, 0, 0, 1, 0, 0); t.globalAlpha = 1; t.globalCompositeOperation = "source-over"; t.clearRect(0, 0, w, h);
+      dibujarObjeto.call(this, t, obj, previa);
+      t.setTransform(1, 0, 0, 1, 0, 0); t.globalAlpha = 1; t.globalCompositeOperation = "destination-in"; t.drawImage(m, 0, 0);
+      t.globalCompositeOperation = "source-over";
+      ctx.drawImage(temporal, 0, 0);
+    };
+    // 3) el contorno de la selección y el trazo en curso, sobre las capas
+    const capaSuperior = L.render_overlay;
+    L.render_overlay = function(){
+      capaSuperior.apply(this, arguments);
+      if(!contorno && !trazo) return;
+      const ctx = this.ctx, {s, tx, ty} = escala();
+      ctx.save(); ctx.setTransform(s, 0, 0, s, tx, ty);
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over"; ctx.lineWidth = 1 / s;
+      const hormigas = path => {
+        ctx.setLineDash([4 / s, 4 / s]);
+        ctx.strokeStyle = token("--exc-negro"); ctx.lineDashOffset = desfase / s; ctx.stroke(path);
+        ctx.strokeStyle = token("--fondo-blanco"); ctx.lineDashOffset = (desfase + 4) / s; ctx.stroke(path);
+      };
+      if(contorno) hormigas(contorno);
+      if(trazo){ const p = new Path2D(); ruta(p, trazo); hormigas(p); }
+      ctx.restore();
+    };
+    // las hormigas caminan (sin recalcular nada más que un cuadro)
+    setInterval(() => { if((contorno || trazo) && !document.hidden){ desfase = (desfase + 1) % 8; v.AppConfig.need_render = true; } }, 160);
+    // al elegir una herramienta del motor, se sueltan las de selección
+    v.document.getElementById("tools_container").addEventListener("click", () => { if(herramienta) usar(null); });
+  }
+  function teclas(ev){
+    const ctrl = ev.ctrlKey || ev.metaKey, k = ev.key.toLowerCase();
+    const enCampo = ev.target && /^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) || (ev.target && ev.target.isContentEditable);
+    if(enCampo) return false;
+    if(k === "escape" && trazo){ trazo = null; MP.render(); return true; }
+    if(k === "enter" && trazo && trazo.tipo === "poligono"){ cerrarTrazo(); return true; }
+    if(ctrl && k === "d"){ nada(); return true; }
+    if(ctrl && ev.shiftKey && k === "i"){ invertir(); return true; }
+    if(ctrl && k === "a" && (herramienta || mascara)){ todo(); return true; }
+    if(!mascara) return false;
+    if(!ctrl && (k === "delete" || k === "backspace")){ borrar(); return true; }
+    if(ctrl && k === "c"){ copiar(); return true; }
+    return false;
+  }
+  /** Voltea la capa activa. Con selección y modo «selección»: solo lo seleccionado, reflejado dentro de su caja
+      (la selección se refleja con ello, como en un editor de capas); con modo «capa» o sin selección: la capa
+      entera, sin que la selección la recorte. Un solo paso de deshacer. */
+  async function voltear(dir, modo){
+    const v = MP.w(), l = MP.cfg().layer;
+    if(!l || l.type !== "image"){ toast("La capa activa no es una imagen: rasterícela (panel Capas)"); return; }
+    const w = l.width_original, h = l.height_original;
+    const espejo = (src, x0, y0, ancho, alto) => {
+      const c = lienzo(w, h), x = c.getContext("2d");
+      x.translate(dir === "horizontal" ? 2 * x0 + ancho : 0, dir === "vertical" ? 2 * y0 + alto : 0);
+      x.scale(dir === "horizontal" ? -1 : 1, dir === "vertical" ? -1 : 1); x.drawImage(src, 0, 0);
+      return c;
+    };
+    if(!mascara || modo === "capa"){
+      const c = lienzo(w, h); c.getContext("2d").drawImage(l.link, 0, 0);
+      const nuevo = espejo(c, 0, 0, w, h);
+      // sin máscara mientras corre la acción: la selección no la recorta (la acción es la del motor)
+      const antes = mascara; mascara = null;
+      try{ await v.Layers.update_layer_image(nuevo, l.id); } finally { mascara = antes; actualizar(); }
+      return;
+    }
+    const m = enCapa(l), d = m.getContext("2d").getImageData(0, 0, w, h).data;
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for(let y = 0; y < h; y++) for(let x = 0; x < w; x++) if(d[(y * w + x) * 4 + 3] > 8){
+      if(x < x0) x0 = x; if(x > x1) x1 = x; if(y < y0) y0 = y; if(y > y1) y1 = y; }
+    if(x1 < 0){ toast("La selección no toca esta capa"); return; }
+    const ancho = x1 - x0 + 1, alto = y1 - y0 + 1;
+    const dentro = recorte(l), reflejado = espejo(dentro, x0, y0, ancho, alto);
+    const fuera = lienzo(w, h), b = fuera.getContext("2d");
+    b.drawImage(l.link, 0, 0); b.globalCompositeOperation = "destination-out"; b.drawImage(m, 0, 0);
+    b.globalCompositeOperation = "source-over"; b.drawImage(reflejado, 0, 0);
+    // la selección se refleja con lo seleccionado (en el espacio del lienzo, con la misma caja)
+    const mascaraNueva = lienzo(W(), H()), mx = mascaraNueva.getContext("2d");
+    const caja0 = caja || {x: 0, y: 0, w: W(), h: H()};
+    mx.translate(dir === "horizontal" ? 2 * caja0.x + caja0.w : 0, dir === "vertical" ? 2 * caja0.y + caja0.h : 0);
+    mx.scale(dir === "horizontal" ? -1 : 1, dir === "vertical" ? -1 : 1); mx.drawImage(mascara, 0, 0);
+    const antes = mascara; mascara = null;
+    try{ await v.Layers.update_layer_image(fuera, l.id); } finally { mascara = antes; }
+    if(!l.rotate) poner(mascaraNueva, "Reflejar selección"); else actualizar();
+  }
+  return {activa, usar, instalar, teclas, todo, nada, invertir, calar, rellenar, borrar, copiar, aCapa, mezclar, voltear,
+    actualizar, herramienta: () => herramienta, limpiar: () => { mascara = null; actualizar(); }};
+})();
+
+/* ================= marca ================= */
+const PALETA = [["vino", "Vino"], ["puka700", "Puka 700"], ["puka", "Puka"], ["qillu", "Q'illu"], ["qillu300", "Q'illu 300"],
+  ["qillu900", "Q'illu 900"], ["tinta", "Tinta"], ["neutral600", "Neutro 600"], ["neutral300", "Neutro 300"],
+  ["neutral200", "Neutro 200"], ["papel", "Papel"], ["blanco", "Blanco"]];
+async function cargarMarca(){
+  if(!E.servidor){ $("#marcos-nota").textContent = "Sin servidor: no hay marcos ni logos."; return; }
+  try{ E.diseno = await pedirJSON("/api/design"); }catch(_){ E.diseno = null; }
+  const col = (E.diseno && E.diseno.colores) || {};
+  const muestras = PALETA.filter(([k]) => col[k]);
+  $("#paleta").innerHTML = muestras.map(([k, n]) =>
+    `<button class="muestra-color" data-hex="${esc(col[k])}" title="${esc(n)} · ${esc(col[k])}" aria-label="${esc(n)}" style="background:${esc(col[k])}"></button>`).join("");
+  // marcos: uno por formato y estilo
+  const marcos = (E.diseno && E.diseno.plantillas && E.diseno.plantillas.marcos) || {};
+  const items = [];
+  for(const [fmt, modos] of Object.entries(marcos)) for(const [modo, url] of Object.entries(modos))
+    items.push({nombre: fmt.replace(/_(\d+x\d+)$/, " $1").replace(/_/g, " ") + " · " + modo, url});
+  $("#marcos").innerHTML = items.length ? items.map(it =>
+    `<button class="insumo est-lienzo" data-url="${esc(it.url)}" data-nombre="Marco · ${esc(it.nombre)}"><span class="vista-insumo"><img loading="lazy" alt="" src="${esc(it.url)}"></span>${esc(it.nombre)}</button>`).join("")
+    : `<span class="est-nota">No hay marcos generados (plantillas/marco_foto_video/generar_marcos.py).</span>`;
+  // logos: los del perfil (/api/design → marca.logos; /api/logos con un servidor anterior) y los insumos
+  let logos = ((E.diseno && E.diseno.marca && E.diseno.marca.logos) || []).map(l => ({name: l.name || l.nombre, url: l.url}));
+  if(!logos.length) try{ logos = await pedirJSON("/api/logos"); }catch(_){ logos = []; }
+  const ins = (E.diseno && E.diseno.insumos) || {};
+  for(const k of ["logo_color", "logo_blanco"]) if(ins[k] && !logos.some(l => l.url === ins[k])) logos.push({name: k.replace("_", " "), url: ins[k]});
+  $("#logos").innerHTML = logos.length ? logos.map(l =>
+    `<button class="insumo est-lienzo" data-url="${esc(l.url)}" data-nombre="Logo · ${esc(l.name)}"><span class="vista-insumo"><img loading="lazy" alt="" src="${esc(l.url)}"></span>${esc(l.name.split(" / ").pop())}</button>`).join("")
+    : `<span class="est-nota">El perfil no tiene logos (rutas.logos).</span>`;
+  await MP.esperar();
+  if(muestras.length){
+    try{
+      const gc = MP.gui().GUI_colors;
+      gc.inputs.swatches.uiSwatches("set_all_hex", muestras.map(([k]) => col[k]));
+      if(col.puka){ gc.set_color({hex: col.puka});
+        const t = MP.cfg().TOOLS.find(x => x.name === "text"); if(t) t.attributes.fill = col.puka; }
+    }catch(_){}
+  }
+  try{ const d = await pedirJSON("/api/fuentes"); E.tipografias = d.fuentes || []; E.familiasMarca = d.familias_marca || {}; }
+  catch(_){   // servidor anterior: solo {archivo: url}, la familia es el nombre del archivo
+    E.tipografias = Object.entries((E.diseno && E.diseno.fuentes) || {}).map(([n, url]) => ({familia: n, url, peso: 400}));
+  }
+  const familias = await MP.fuentes(E.tipografias);
+  const marca = new Set(E.tipografias.filter(f => f.marca).flatMap(f => [f.familia, f.familia_legado]));
+  $("#tipografias").innerHTML = familias.map(f => `<button class="tipografia" data-familia="${esc(f)}" style="font-family:'${esc(f)}'">${esc(f)}<small>${marca.has(f) ? "marca" : "estudio"}</small></button>`).join("");
+  // la vista previa del botón usa la fuente: se registra también en esta página
+  for(const [fam, url, desc] of MP.caras(E.tipografias)){ try{ new FontFace(fam, `url("${conPrefijo(url)}")`, desc)
+    .load().then(x => document.fonts.add(x)).catch(() => {}); }catch(_){} }
+  if(!familias.length) $("#tipografias-nota").textContent = "El perfil no tiene tipografías (rutas.fuentes): quedan las del sistema.";
+}
+async function insertarMarco(url, nombre){
+  await MP.esperar();
+  let img; try{ img = await cargarImagen(url); }catch(_){ toast("No se pudo cargar el marco"); return; }
+  const W0 = img.naturalWidth, H0 = img.naturalHeight;
+  if(MP.cfg().WIDTH !== W0 || MP.cfg().HEIGHT !== H0) await aplicarFormato(W0, H0);
+  await MP.insertarImagen(img, nombre, {x: 0, y: 0, width: MP.cfg().WIDTH, height: MP.cfg().HEIGHT});
+  toast("Marco añadido como capa");
+}
+async function insertarLogo(url, nombre){
+  await MP.esperar();
+  let img; try{ img = await cargarImagen(url); }catch(_){ toast("No se pudo cargar el logo"); return; }
+  const W = MP.cfg().WIDTH, H = MP.cfg().HEIGHT, margen = Math.round(Math.min(W, H) * 0.04);
+  const iw = img.naturalWidth || 400, ih = img.naturalHeight || 400;
+  const k = Math.min(W * 0.22 / iw, H * 0.22 / ih);
+  const w = Math.round(iw * k), h = Math.round(ih * k);
+  await MP.insertarImagen(img, nombre, {x: W - w - margen, y: H - h - margen, width: w, height: h});
+  toast("Logo añadido como capa");
+}
+
+/* ================= exportar ================= */
+function mimeDe(f){ return f === "png" ? "image/png" : f === "webp" ? "image/webp" : "image/jpeg"; }
+function lienzoExportado(){
+  const escala = +$("#x-escala").value || 1;
+  // el JPG no tiene transparencia: lo transparente sale del blanco de los tokens
+  const fondo = E.formatoX === "jpg" ? getComputedStyle(document.documentElement).getPropertyValue("--fondo-blanco").trim() : null;
+  return MP.aplanado(escala, fondo);
+}
+const dataURLExportado = () => lienzoExportado().toDataURL(mimeDe(E.formatoX), +$("#x-calidad").value / 100);
+const tituloExportado = () => $("#x-titulo").value.trim() || E.titulo || ("Foto · " + hoy());
+function abrirExportar(){
+  MP.esperar().then(() => {
+    $("#x-titulo").value = $("#x-titulo").value || E.titulo || ("Foto · " + hoy());
+    actualizarMedidaExport();
+    $("#m-exportar").classList.add("on");
+    $("#x-titulo").focus();
+  });
+}
+function actualizarMedidaExport(){
+  const s = +$("#x-escala").value || 1;
+  $("#x-medida").textContent = Math.round(MP.cfg().WIDTH * s) + " × " + Math.round(MP.cfg().HEIGHT * s) + " px";
+  $("#x-calidad-fila").style.display = E.formatoX === "png" ? "none" : "";
+}
+const cerrarExportar = () => $("#m-exportar").classList.remove("on");
+async function exportarDescarga(){
+  const c = lienzoExportado(), ext = E.formatoX;
+  c.toBlob(b => { const u = URL.createObjectURL(b); descargar(u, nombreArchivo(tituloExportado()) + "." + ext);
+    setTimeout(() => URL.revokeObjectURL(u), 4000); }, mimeDe(ext), +$("#x-calidad").value / 100);
+  cerrarExportar(); toast("Descargada");
+}
+async function exportarSalida(){
+  const b = $("#x-salida"); b.disabled = true;
+  try{
+    const d = await postJSON("/api/exportar-foto", {nombre: nombreArchivo(tituloExportado()) + "." + E.formatoX,
+      canal: $("#x-canal").value, dataURL: dataURLExportado(), origen: [...E.origenes][0] || ""});
+    toast("Guardada en la salida: " + (d.archivo || "listo")); cerrarExportar(); cargarBanco();
+  }catch(e){ toast("No se pudo guardar en la salida: " + e.message); }
+  b.disabled = false;
+}
+/* «Guardar en la Fototeca»: la misma llamada que el editor de piezas (Qillqa la atiende en su proxy). */
+async function exportarFototeca(){
+  const b = $("#x-fototeca"); b.disabled = true;
+  try{
+    const r = await fetch(api("/api/fototeca-pieza"), {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({titulo: tituloExportado(), dataURL: dataURLExportado(), origenes: [...E.origenes], fotos: [...E.fotos]})});
+    const d = await r.json().catch(() => ({}));
+    if(!r.ok || !d.ok) throw new Error(d.error || d.detail || ("HTTP " + r.status));
+    toast(d.nueva === false ? "Ya estaba en la Fototeca" : "Guardada en la Fototeca (Piezas de prensa)");
+    cerrarExportar();
+  }catch(e){ toast("No se pudo guardar en la Fototeca: " + e.message); }
+  b.disabled = false;
+}
+
+/* ================= proyectos ================= */
+async function listarProyectos(){
+  if(!E.servidor){ $("#proyectos").innerHTML = `<span class="est-nota">Sin servidor: descargue el proyecto.</span>`; return; }
+  let lista = [];
+  try{ const r = await fetch(api("/api/proyectos-foto"), {cache: "no-store"}); lista = r.ok ? await r.json() : []; }catch(_){}
+  $("#proyectos").innerHTML = lista.length ? lista.slice().reverse().map(p =>
+    `<button class="proyecto" data-nombre="${esc(p.nombre)}"><i class="ico ico--sm" data-ico="imagen"></i>${esc(p.nombre)}<small>${esc(p.fecha)}</small></button>`).join("")
+    : `<span class="est-nota">Todavía no hay proyectos guardados.</span>`;
+  estudioIconos($("#proyectos"));
+}
+function nombreProyecto(){
+  const n = $("#proyecto-nombre").value.trim() || E.titulo || ("foto " + new Date().toISOString().slice(0, 16).replace("T", " "));
+  $("#proyecto-nombre").value = n; return n;
+}
+async function guardarProyecto(){
+  await MP.esperar();
+  const nombre = nombreProyecto();
+  if(!E.servidor){ bajarProyecto(); return; }
+  try{
+    const datos = MP.proyectoJSON();
+    datos.estudio = {titulo: E.titulo || nombre, origenes: [...E.origenes], fotos: [...E.fotos]};
+    const d = await postJSON("/api/proyecto-foto", {nombre, datos});
+    E.titulo = E.titulo || nombre;
+    toast("Proyecto guardado: " + d.nombre); listarProyectos();
+  }catch(e){ toast("No se pudo guardar el proyecto: " + e.message); }
+}
+async function bajarProyecto(){
+  await MP.esperar();
+  const b = new Blob([JSON.stringify(MP.proyectoJSON())], {type: "application/json"});
+  const u = URL.createObjectURL(b); descargar(u, nombreArchivo(nombreProyecto()) + ".json");
+  setTimeout(() => URL.revokeObjectURL(u), 4000);
+}
+async function abrirProyectoDatos(datos, nombre){
+  await MP.esperar();
+  const est = datos.estudio || {};
+  E.origenes = new Set(est.origenes || []); E.fotos = new Set(est.fotos || []); E.titulo = est.titulo || nombre || "";
+  await MP.abrirProyecto(datos);
+  $("#proyecto-nombre").value = nombre || "";
+  toast("Proyecto abierto: " + (nombre || "sin nombre"));
+}
+async function abrirProyectoServidor(nombre){
+  try{
+    const r = await fetch(api("/api/proyecto-foto?nombre=" + encodeURIComponent(nombre)), {cache: "no-store"});
+    if(!r.ok) throw new Error("HTTP " + r.status);
+    const doc = await r.json();
+    await abrirProyectoDatos(doc.datos || doc, doc.nombre || nombre);
+  }catch(e){ toast("No se pudo abrir el proyecto: " + e.message); }
+}
+
+/* ================= panel, riel y barra de estado ================= */
+function mostrarVista(id){
+  $("#main").classList.remove("sin-panel");
+  $$(".vista").forEach(v => v.classList.toggle("on", v.id === id));
+  $$("#riel .est-riel__boton").forEach(b => b.classList.toggle("on", b.dataset.vista === id));
+  $("#izq-titulo").textContent = $("#" + id).dataset.titulo;
+  if(id === "v-tono") MP.esperar().then(Tono.tomarMuestra); else Tono.quitarVista();
+  if(id === "v-proyectos") listarProyectos();
+  setTimeout(() => window.dispatchEvent(new Event("resize")), 0);
+}
+function refrescarEstado(){
+  const c = MP.w() && MP.w().AppConfig;
+  if(!c || !c.layer) return;
+  $("#estado-dim").textContent = c.WIDTH + " × " + c.HEIGHT + " px";
+  $("#estado-capas").textContent = c.layers.length;
+  $("#estado-activa").textContent = c.layer.name || "—";
+  const z = Math.round((c.ZOOM || 1) * 100) + "%";
+  $("#estado-zoom").textContent = z; $("#zoom-cifra").textContent = z;
+  $("#capa-nombre").textContent = c.layer.name || "—";
+  const op = $("#capa-opacidad");
+  if(document.activeElement !== op){ op.value = c.layer.opacity ?? 100; op.nextElementSibling.textContent = op.value; }
+  try{ $("#b-deshacer").disabled = !MP.w().State.can_undo(); $("#b-rehacer").disabled = !MP.w().State.can_redo(); }catch(_){}
+  if($("#v-tono").classList.contains("on") && Tono.capaMuestra() !== c.layer.id) Tono.tomarMuestra();
+}
+/* Atajos del estudio (en esta página y con el foco en el lienzo). */
+function atajos(ev){
+  if(Sel.teclas(ev)){ ev.preventDefault(); ev.stopPropagation(); return; }
+  const ctrl = ev.ctrlKey || ev.metaKey;
+  if(!ctrl) return;
+  const k = ev.key.toLowerCase();
+  if(k === "s" && !ev.shiftKey){ ev.preventDefault(); ev.stopPropagation(); guardarProyecto(); }
+  else if(k === "e"){ ev.preventDefault(); ev.stopPropagation(); abrirExportar(); }
+  else if(ev.target && ev.target.ownerDocument === document && !/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName)){
+    if(k === "z" && !ev.shiftKey){ ev.preventDefault(); MP.w().State.undo(); }
+    else if(k === "y" || (k === "z" && ev.shiftKey)){ ev.preventDefault(); MP.w().State.redo(); }
+  }
+}
+
+/* ================= arranque ================= */
+(async () => {
+  pintarFormatos(); Tono.iniciar(); Curvas.iniciar();
+  // selección
+  $("#sel-herramientas").addEventListener("click", e => { const b = e.target.closest("[data-sel]"); if(!b) return;
+    MP.esperar().then(() => Sel.usar(Sel.herramienta() === b.dataset.sel ? null : b.dataset.sel)); });
+  $("#b-sel-soltar").onclick = () => Sel.usar(null);
+  $("#sel-modo").addEventListener("click", e => { const b = e.target.closest("button"); if(!b) return;
+    $$("#sel-modo button").forEach(x => x.classList.toggle("on", x === b)); E.selModo = b.dataset.modo; });
+  $("#sel-calado").oninput = e => e.target.nextElementSibling.textContent = e.target.value + " px";
+  $("#sel-tolerancia").oninput = e => e.target.nextElementSibling.textContent = e.target.value;
+  $("#b-sel-todo").onclick = () => Sel.todo(); $("#b-sel-nada").onclick = () => Sel.nada();
+  $("#b-sel-invertir").onclick = () => Sel.invertir(); $("#b-sel-calar").onclick = () => Sel.calar();
+  $("#b-sel-rellenar").onclick = () => Sel.rellenar(); $("#b-sel-borrar").onclick = () => Sel.borrar();
+  $("#b-sel-copiar").onclick = () => Sel.copiar();
+  $("#b-sel-capa").onclick = () => Sel.aCapa(false); $("#b-sel-cortar").onclick = () => Sel.aCapa(true);
+  // riel y panel
+  $$("#riel .est-riel__boton").forEach(b => b.onclick = () => {
+    if(b.classList.contains("on") && !$("#main").classList.contains("sin-panel")){
+      $("#main").classList.add("sin-panel"); b.classList.remove("on"); window.dispatchEvent(new Event("resize")); return; }
+    mostrarVista(b.dataset.vista);
+  });
+  $("#b-plegar").onclick = () => { $("#main").classList.add("sin-panel"); $$("#riel .est-riel__boton").forEach(b => b.classList.remove("on"));
+    window.dispatchEvent(new Event("resize")); };
+  // el marco se reajusta cuando cambia el panel
+  window.addEventListener("resize", () => { try{ MP.w().dispatchEvent(new Event("resize")); }catch(_){} });
+  // cabecera
+  $("#b-deshacer").onclick = () => MP.w().State.undo();
+  $("#b-rehacer").onclick = () => MP.w().State.redo();
+  $("#b-acercar").onclick = () => MP.modulo("view/zoom.in");
+  $("#b-alejar").onclick = () => MP.modulo("view/zoom.out");
+  $("#b-ajustar").onclick = () => MP.modulo("view/zoom.auto");
+  $("#b-real").onclick = () => MP.modulo("view/zoom.original");
+  $("#b-atajos").onclick = () => MP.modulo("help/shortcuts.shortcuts");
+  $("#b-subir").onclick = $("#b-subir-2").onclick = () => $("#archivo-imagen").click();
+  $("#archivo-imagen").onchange = e => { abrirArchivo(e.target.files[0]); e.target.value = ""; };
+  $("#b-exportar").onclick = abrirExportar;
+  $("#b-proyecto").onclick = guardarProyecto;
+  document.addEventListener("keydown", atajos);
+  // acciones del motor y herramientas
+  document.addEventListener("click", e => {
+    const m = e.target.closest("[data-modulo]"); if(m){ MP.esperar().then(() => MP.modulo(m.dataset.modulo)); return; }
+    const h = e.target.closest("[data-herramienta]"); if(h){ MP.esperar().then(() => MP.herramienta(h.dataset.herramienta)); }
+    const vo = e.target.closest("[data-voltear]"); if(vo){ MP.esperar().then(() => Sel.voltear(vo.dataset.voltear, E.voltear)); }
+  });
+  // segmentados
+  for(const [sel, clave, campo] of [["#modo-abrir", "modoAbrir", "modo"], ["#modo-encuadre", "encuadre", "modo"], ["#x-formato", "formatoX", "f"],
+    ["#modo-voltear", "voltear", "modo"]]){
+    $(sel).addEventListener("click", e => { const b = e.target.closest("button"); if(!b) return;
+      $$(sel + " button").forEach(x => x.classList.toggle("on", x === b)); E[clave] = b.dataset[campo];
+      if(sel === "#x-formato") actualizarMedidaExport(); });
+  }
+  // banco
+  $("#banco-buscar").addEventListener("input", pintarBanco);
+  $("#b-banco-refrescar").onclick = cargarBanco;
+  $("#banco-rejilla").addEventListener("click", e => { const b = e.target.closest(".foto"); if(!b) return;
+    const it = E.banco[+b.dataset.i]; if(it) abrirURL(it.url, it.name); });
+  // formato
+  $("#formatos").addEventListener("click", e => { const b = e.target.closest(".formato"); if(!b) return;
+    const f = FORMATOS[+b.dataset.i]; aplicarFormato(f.w, f.h); });
+  $("#b-medida").onclick = () => { const w = Math.round(+$("#medida-w").value), h = Math.round(+$("#medida-h").value);
+    if(w >= 16 && h >= 16 && w <= 10000 && h <= 10000) aplicarFormato(w, h); else toast("Medida entre 16 y 10 000 px"); };
+  $("#b-encuadrar").onclick = () => MP.esperar().then(() => MP.encuadrar(null, E.encuadre));
+  // marca
+  $("#paleta").addEventListener("click", e => { const b = e.target.closest(".muestra-color"); if(!b) return;
+    MP.esperar().then(() => { MP.gui().GUI_colors.set_color({hex: b.dataset.hex}); toast("Color activo " + b.dataset.hex); }); });
+  $("#marcos").addEventListener("click", e => { const b = e.target.closest(".insumo"); if(b) insertarMarco(b.dataset.url, b.dataset.nombre); });
+  $("#tipografias").addEventListener("click", e => { const b = e.target.closest(".tipografia"); if(b) MP.esperar().then(() => MP.usarFuente(b.dataset.familia)); });
+  $("#logos").addEventListener("click", e => { const b = e.target.closest(".insumo"); if(b) insertarLogo(b.dataset.url, b.dataset.nombre); });
+  // capas
+  let opacidadInicial = null;
+  $("#capa-opacidad").addEventListener("input", e => { const c = MP.cfg().layer; if(!c) return;
+    if(opacidadInicial == null) opacidadInicial = {id: c.id, valor: c.opacity};
+    c.opacity = +e.target.value; e.target.nextElementSibling.textContent = e.target.value; MP.render(); });
+  $("#capa-opacidad").addEventListener("change", e => {          // un solo paso de deshacer por arrastre
+    const ini = opacidadInicial; opacidadInicial = null; if(!ini) return;
+    const nuevo = +e.target.value; if(nuevo === ini.valor) return;
+    MP.hacer(MP.accion("estudio_opacidad", "Opacidad de la capa", () => MP.ponerCapa(ini.id, {opacity: nuevo}),
+      () => MP.ponerCapa(ini.id, {opacity: ini.valor})));
+  });
+  // exportar
+  $("#x-cancelar").onclick = cerrarExportar;
+  $("#m-exportar").addEventListener("click", e => { if(e.target.id === "m-exportar") cerrarExportar(); });
+  document.addEventListener("keydown", e => { if(e.key === "Escape"){ cerrarExportar(); Curvas.cerrar(); } });
+  $("#x-escala").onchange = actualizarMedidaExport;
+  $("#x-calidad").oninput = e => e.target.nextElementSibling.textContent = e.target.value;
+  $("#x-descargar").onclick = exportarDescarga;
+  $("#x-salida").onclick = exportarSalida;
+  $("#x-fototeca").onclick = exportarFototeca;
+  // proyectos
+  $("#b-proyecto-guardar").onclick = guardarProyecto;
+  $("#b-proyecto-bajar").onclick = bajarProyecto;
+  $("#b-proyectos-refrescar").onclick = listarProyectos;
+  $("#proyectos").addEventListener("click", e => { const b = e.target.closest(".proyecto"); if(b) abrirProyectoServidor(b.dataset.nombre); });
+  $("#b-proyecto-abrir-local").onclick = () => $("#archivo-proyecto").click();
+  $("#archivo-proyecto").onchange = async e => { const f = e.target.files[0]; e.target.value = ""; if(!f) return;
+    try{ await abrirProyectoDatos(JSON.parse(await f.text()), f.name.replace(/\.json$/i, "")); }
+    catch(err){ toast("No es un proyecto válido: " + err.message); } };
+
+  await detectarServidor();
+  cargarBanco(); cargarMarca();
+  try{ await MP.esperar(); }catch(e){ $("#cargando").textContent = "El lienzo no cargó: " + e.message; return; }
+  setInterval(refrescarEstado, 400); refrescarEstado();
+  // enlace profundo: foto.html?imagen=<url> (lo usa «Usar en Prensa» de Qillqa) · ?proyecto=<nombre>
+  const q = new URLSearchParams(location.search);
+  if(q.get("imagen")) abrirURL(q.get("imagen"), q.get("nombre") || undefined, "documento");
+  else if(q.get("proyecto")) abrirProyectoServidor(q.get("proyecto"));
+})();
+</script>
+</body>
+</html>
